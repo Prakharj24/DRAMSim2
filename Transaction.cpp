@@ -43,6 +43,13 @@ using std::dec;
 
 namespace DRAMSim {
 
+Transaction::Transaction(TransactionType transType, uint64_t addr, void *dat, uint32_t cpu) :
+	transactionType(transType),
+	address(addr),
+	data(dat),
+	core(cpu)
+{}
+
 Transaction::Transaction(TransactionType transType, uint64_t addr, void *dat) :
 	transactionType(transType),
 	address(addr),

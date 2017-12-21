@@ -489,6 +489,7 @@ void MemoryController::update()
 
 	}
 
+	cout << "transactionQueue.size(): " << transactionQueue.size() << endl;
 	for (size_t i=0;i<transactionQueue.size();i++)
 	{
 		//pop off top transaction from queue
@@ -496,7 +497,7 @@ void MemoryController::update()
 		//	assuming simple scheduling at the moment
 		//	will eventually add policies here
 		Transaction *transaction = transactionQueue[i];
-
+		cout << "CPU ID: " << transaction->core << endl;
 		//map address to rank,bank,row,col
 		unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
 
