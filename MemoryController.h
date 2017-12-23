@@ -60,6 +60,7 @@ public:
 	MemoryController(MemorySystem* ms, CSVWriter &csvOut_, ostream &dramsim_log_);
 	virtual ~MemoryController();
 
+	bool isValid(uint32_t core, uint32_t bank);
 	bool addTransaction(Transaction *trans);
 	bool WillAcceptTransaction();
 	void returnReadData(const Transaction *trans);
@@ -73,6 +74,14 @@ public:
 	//fields
 	vector<Transaction *> transactionQueue;
 private:
+
+	//BTA variable
+	uint32_t turn, subTurn;
+	uint64_t lastEpoch;
+	const uint64_t epochLen = 20;
+	uint64_t prevAct, prevReq;
+
+
 	ostream &dramsim_log;
 	vector< vector <BankState> > bankStates;
 	//functions

@@ -67,7 +67,12 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 		poppedBusPacket(NULL),
 		csvOut(csvOut_),
 		totalTransactions(0),
-		refreshRank(0)
+		refreshRank(0),
+		turn(0),
+		subTurn(0),
+		lastEpoch(0),
+		prevAct(0),
+		prevReq(0)
 {
 	//get handle on parent
 	parentMemorySystem = parent;
@@ -154,6 +159,20 @@ void MemoryController::update()
 {
 
 	//PRINT(" ------------------------- [" << currentClockCycle << "] -------------------------");
+
+	// cout << "turn: " << turn << " subTurn: " << subTurn << endl;
+	// update BTA turn and subturn
+	if(currentClockCycle - lastEpoch >= epochLen){
+		lastEpoch = currentClockCycle;
+		if(turn == 3){
+			turn = 0;
+			if(subTurn == 2)
+				subTurn = 0;
+			else subTurn++;
+		}
+		else turn++;
+	}
+	// cout << "lastEpoch: " << lastEpoch << "clock: " << currentClockCycle << endl;
 
 	//update bank states
 	for (size_t i=0;i<NUM_RANKS;i++)
@@ -416,6 +435,12 @@ void MemoryController::update()
 				break;
 			case ACTIVATE:
 				//add energy to account for total
+				// if((currentClockCycle - prevAct)%20 != 0)
+				// 	cout << "problem" << endl;
+				// cout << "activate: " << currentClockCycle << " diff: " << currentClockCycle - prevAct << endl;
+				// prevAct = currentClockCycle;
+				// cout << "rank: "<< rank << " bank: " << bank << " act: " <<  bankStates[rank][bank].nextActivate << " difference: " << (bankStates[rank][bank].nextActivate - prevAct) << endl;
+				// prevAct = bankStates[rank][bank].nextActivate;
 				if (DEBUG_POWER)
 				{
 					PRINT(" ++ Adding Activate and Precharge energy to total energy");
@@ -489,7 +514,6 @@ void MemoryController::update()
 
 	}
 
-	cout << "transactionQueue.size(): " << transactionQueue.size() << endl;
 	for (size_t i=0;i<transactionQueue.size();i++)
 	{
 		//pop off top transaction from queue
@@ -497,78 +521,89 @@ void MemoryController::update()
 		//	assuming simple scheduling at the moment
 		//	will eventually add policies here
 		Transaction *transaction = transactionQueue[i];
-		cout << "CPU ID: " << transaction->core << endl;
+
 		//map address to rank,bank,row,col
 		unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
 
 		// pass these in as references so they get set by the addressMapping function
 		addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
 
-		//if we have room, break up the transaction into the appropriate commands
-		//and add them to the command queue
-		if (commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank))
+		// satisfy BTA constraints
+		if((turn == transaction->core) && isValid(transaction->core, newTransactionBank) && ((currentClockCycle - lastEpoch) >= epochLen-1))
 		{
-			if (DEBUG_ADDR_MAP) 
+
+			//if we have room, break up the transaction into the appropriate commands
+			//and add them to the command queue
+			if (commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank))
 			{
-				PRINTN("== New Transaction - Mapping Address [0x" << hex << transaction->address << dec << "]");
-				if (transaction->transactionType == DATA_READ) 
+
+
+				// cout << "req dispatched@: " << currentClockCycle << " diff: " << currentClockCycle - prevReq<< endl;
+				// prevReq = currentClockCycle;
+						// cout << "act: " << bankStates[newTransactionRank][newTransactionBank].nextActivate << endl;
+				if (DEBUG_ADDR_MAP) 
 				{
-					PRINT(" (Read)");
+					PRINTN("== New Transaction - Mapping Address [0x" << hex << transaction->address << dec << "]");
+					if (transaction->transactionType == DATA_READ) 
+					{
+						PRINT(" (Read)");
+					}
+					else
+					{
+						PRINT(" (Write)");
+					}
+					PRINT("  Rank : " << newTransactionRank);
+					PRINT("  Bank : " << newTransactionBank);
+					PRINT("  Row  : " << newTransactionRow);
+					PRINT("  Col  : " << newTransactionColumn);
+				}
+
+
+
+				//now that we know there is room in the command queue, we can remove from the transaction queue
+				transactionQueue.erase(transactionQueue.begin()+i);
+
+				//create activate command to the row we just translated
+				BusPacket *ACTcommand = new BusPacket(ACTIVATE, transaction->address,
+						newTransactionColumn, newTransactionRow, newTransactionRank,
+						newTransactionBank, 0, dramsim_log);
+
+				//create read or write command and enqueue it
+				BusPacketType bpType = transaction->getBusPacketType();
+				BusPacket *command = new BusPacket(bpType, transaction->address,
+						newTransactionColumn, newTransactionRow, newTransactionRank,
+						newTransactionBank, transaction->data, dramsim_log);
+
+
+
+				commandQueue.enqueue(ACTcommand);
+				commandQueue.enqueue(command);
+
+				// If we have a read, save the transaction so when the data comes back
+				// in a bus packet, we can staple it back into a transaction and return it
+				if (transaction->transactionType == DATA_READ)
+				{
+					pendingReadTransactions.push_back(transaction);
 				}
 				else
 				{
-					PRINT(" (Write)");
+					// just delete the transaction now that it's a buspacket
+					delete transaction; 
 				}
-				PRINT("  Rank : " << newTransactionRank);
-				PRINT("  Bank : " << newTransactionBank);
-				PRINT("  Row  : " << newTransactionRow);
-				PRINT("  Col  : " << newTransactionColumn);
+				/* only allow one transaction to be scheduled per cycle -- this should
+				 * be a reasonable assumption considering how much logic would be
+				 * required to schedule multiple entries per cycle (parallel data
+				 * lines, switching logic, decision logic)
+				 */
+				break;
 			}
-
-
-
-			//now that we know there is room in the command queue, we can remove from the transaction queue
-			transactionQueue.erase(transactionQueue.begin()+i);
-
-			//create activate command to the row we just translated
-			BusPacket *ACTcommand = new BusPacket(ACTIVATE, transaction->address,
-					newTransactionColumn, newTransactionRow, newTransactionRank,
-					newTransactionBank, 0, dramsim_log);
-
-			//create read or write command and enqueue it
-			BusPacketType bpType = transaction->getBusPacketType();
-			BusPacket *command = new BusPacket(bpType, transaction->address,
-					newTransactionColumn, newTransactionRow, newTransactionRank,
-					newTransactionBank, transaction->data, dramsim_log);
-
-
-
-			commandQueue.enqueue(ACTcommand);
-			commandQueue.enqueue(command);
-
-			// If we have a read, save the transaction so when the data comes back
-			// in a bus packet, we can staple it back into a transaction and return it
-			if (transaction->transactionType == DATA_READ)
+			else // no room, do nothing this cycle
 			{
-				pendingReadTransactions.push_back(transaction);
+				//PRINT( "== Warning - No room in command queue" << endl;
 			}
-			else
-			{
-				// just delete the transaction now that it's a buspacket
-				delete transaction; 
-			}
-			/* only allow one transaction to be scheduled per cycle -- this should
-			 * be a reasonable assumption considering how much logic would be
-			 * required to schedule multiple entries per cycle (parallel data
-			 * lines, switching logic, decision logic)
-			 */
-			break;
-		}
-		else // no room, do nothing this cycle
-		{
-			//PRINT( "== Warning - No room in command queue" << endl;
 		}
 	}
+
 
 
 	//calculate power
@@ -618,15 +653,15 @@ void MemoryController::update()
 
 		//check for open bank
 		bool bankOpen = false;
-		for (size_t j=0;j<NUM_BANKS;j++)
-		{
-			if (bankStates[i][j].currentBankState == Refreshing ||
-			        bankStates[i][j].currentBankState == RowActive)
-			{
-				bankOpen = true;
-				break;
-			}
-		}
+		// for (size_t j=0;j<NUM_BANKS;j++)
+		// {
+		// 	if (bankStates[i][j].currentBankState == Refreshing ||
+		// 	        bankStates[i][j].currentBankState == RowActive)
+		// 	{
+		// 		bankOpen = true;
+		// 		break;
+		// 	}
+		// }
 
 		//background power is dependent on whether or not a bank is open or not
 		if (bankOpen)
@@ -956,6 +991,56 @@ void MemoryController::printStats(bool finalStats)
 
 	resetStats();
 }
+
+
+bool
+MemoryController::isValid(uint32_t core, uint32_t bank){
+
+    if(core == 0) {
+        if(subTurn == 0 &&( bank == 0 || bank == 3 || bank == 6)) // grp A
+            return true;
+        else if(subTurn == 2 &&( bank == 2 || bank == 5)) // grp C
+            return true;
+        else if(subTurn == 1 &&( bank == 1 || bank == 4 || bank == 7)) // grp B
+            return true;
+        else
+        return false;
+    }
+    else if(core == 1 ){
+        if(subTurn == 0 &&( bank == 1 || bank == 4 || bank == 7)) // grp B
+            return true;
+        else if(subTurn == 2 &&( bank == 0 || bank == 3 || bank == 6)) // grp A
+            return true;
+        else if(subTurn == 1 &&( bank == 2 || bank == 5)) //grp C
+            return true;
+        else
+        return false;
+    }
+        else if(core == 2 ){
+        if(subTurn == 2 &&( bank == 1 || bank == 4 || bank == 7)) // grp B
+            return true;
+        else if(subTurn == 1 &&( bank == 0 || bank == 3 || bank == 6)) // grp A
+            return true;
+        else if(subTurn == 0 &&( bank == 2 || bank == 5)) //grp C
+            return true;
+        else
+        return false;
+    }
+        else if(core == 3 ){
+        if(subTurn == 1 &&( bank == 1 || bank == 4 || bank == 7)) // grp B
+            return true;
+        else if(subTurn == 0 &&( bank == 0 || bank == 3 || bank == 6)) // grp A
+            return true;
+        else if(subTurn == 2 &&( bank == 2 || bank == 5)) //grp C
+            return true;
+        else
+        return false;
+    }
+    else
+        return false;
+}
+
+
 MemoryController::~MemoryController()
 {
 	//ERROR("MEMORY CONTROLLER DESTRUCTOR");
