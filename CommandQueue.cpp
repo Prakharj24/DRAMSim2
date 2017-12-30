@@ -197,6 +197,7 @@ bool CommandQueue::pop(BusPacket **busPacket)
 		//if the memory controller set the flags signaling that we need to issue a refresh
 		if (refreshWaiting)
 		{
+			PRINT("refreshWaiting");
 			bool foundActiveOrTooEarly = false;
 			//look for an open bank
 			for (size_t b=0;b<NUM_BANKS;b++)
@@ -218,6 +219,7 @@ bool CommandQueue::pop(BusPacket **busPacket)
 							{
 								*busPacket = packet;
 								queue.erase(queue.begin() + j);
+								PRINT("command removed");
 								sendingREF = true;
 							}
 							break;
@@ -251,6 +253,7 @@ bool CommandQueue::pop(BusPacket **busPacket)
 		//if we're not sending a REF, proceed as normal
 		if (!sendingREF)
 		{
+			PRINT("not sending a REF");
 			bool foundIssuable = false;
 			unsigned startingRank = nextRank;
 			unsigned startingBank = nextBank;
@@ -279,6 +282,7 @@ bool CommandQueue::pop(BusPacket **busPacket)
 								*busPacket = queue[i];
 								queue.erase(queue.begin()+i);
 								foundIssuable = true;
+								PRINT("command removed");
 								break;
 							}
 						}
