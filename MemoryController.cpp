@@ -301,7 +301,7 @@ void MemoryController::update()
 
 	//function returns true if there is something valid in poppedBusPacket
 	if (commandQueue.pop(&poppedBusPacket))
-	{	PRINT(" -- poppedBusPacket --");
+	{	
 		if (poppedBusPacket->busPacketType == WRITE || poppedBusPacket->busPacketType == WRITE_P)
 		{
 
@@ -319,7 +319,7 @@ void MemoryController::update()
 		unsigned bank = poppedBusPacket->bank;
 		switch (poppedBusPacket->busPacketType)
 		{
-			PRINT(" -- busPacketType --");
+			
 			case READ_P:
 			case READ:
 				//add energy to account for total
@@ -436,10 +436,10 @@ void MemoryController::update()
 				break;
 			case ACTIVATE:
 				//add energy to account for total
-				if((currentClockCycle - prevAct)%25 != 0)
-					PRINT("problem");
-				PRINT("activate: " << currentClockCycle << " diff: " << currentClockCycle - prevAct);
-				prevAct = currentClockCycle;
+				// if((currentClockCycle - prevAct)%25 != 0)
+				// 	PRINT("problem");
+				// PRINT("activate: " << currentClockCycle << " diff: " << currentClockCycle - prevAct);
+				// prevAct = currentClockCycle;
 				// cout << "rank: "<< rank << " bank: " << bank << " act: " <<  bankStates[rank][bank].nextActivate << " difference: " << (bankStates[rank][bank].nextActivate - prevAct) << endl;
 				// prevAct = bankStates[rank][bank].nextActivate;
 				if (DEBUG_POWER)
@@ -539,8 +539,8 @@ void MemoryController::update()
 			{
 
 
-				PRINT( "req dispatched@: " << currentClockCycle << " diff: " << currentClockCycle - prevReq);
-				prevReq = currentClockCycle;
+				// PRINT( "req dispatched@: " << currentClockCycle << " diff: " << currentClockCycle - prevReq);
+				// prevReq = currentClockCycle;
 						// cout << "act: " << bankStates[newTransactionRank][newTransactionBank].nextActivate << endl;
 				if (DEBUG_ADDR_MAP) 
 				{

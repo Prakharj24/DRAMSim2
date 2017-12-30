@@ -78,7 +78,7 @@ private:
 	//BTA variable
 	uint32_t turn, subTurn;
 	uint64_t lastEpoch;
-	const uint64_t epochLen = 25;
+	const uint64_t epochLen = 15;
 	uint64_t prevAct, prevReq;
 
 
