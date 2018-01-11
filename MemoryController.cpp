@@ -489,6 +489,13 @@ void MemoryController::update()
 
 	}
 
+
+
+	constructSchedule(currentClockCycle);
+	dispatchReq(currentClockCycle);
+
+
+
 	cout << "transactionQueue.size(): " << transactionQueue.size() << endl;
 	for (size_t i=0;i<transactionQueue.size();i++)
 	{
@@ -977,3 +984,18 @@ void MemoryController::insertHistogram(unsigned latencyValue, unsigned rank, uns
 	//poor man's way to bin things.
 	latencies[(latencyValue/HISTOGRAM_BIN_SIZE)*HISTOGRAM_BIN_SIZE]++;
 }
+
+
+// to construct SecMC schedule
+void MemoryController::constructSchedule(uint64_t curClock)
+{
+	if(curClock != epochStart)
+		return;
+
+	epochStart = curClock + CYCLE_LENGTH;
+
+	// real construction starts here
+	
+
+}
+
