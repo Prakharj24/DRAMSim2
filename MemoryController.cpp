@@ -108,7 +108,28 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	{
 		refreshCountdown.push_back((int)((REFRESH_PERIOD/tCK)/NUM_RANKS)*(i+1));
 	}
-}
+
+	// SecMC-NI related initialization
+	
+	epochStart = 0;
+	dispatchTick = 0;
+
+	for(int i=0; i<4;i++){
+		rankQ[i].reserve(NUM_RANKS);
+		for(size_t j=0;j<NUM_RANKS;j++){
+			rankQ[i][j].reserve(TRANS_QUEUE_DEPTH);
+		}
+	}
+
+	uint64_t M = max(NUM_RANKS, NUM_BANKS);
+	for(int i=0;i<3;i++){
+		for(int j=0;j<4;j++){
+			sch[i][j] = M;
+		}
+	}
+
+	turn = 0;
+}	
 
 //get a bus packet from either data or cmd bus
 void MemoryController::receiveFromBus(BusPacket *bpacket)
@@ -489,94 +510,11 @@ void MemoryController::update()
 
 	}
 
-
-
+	// SECMC-NI scheduling
+ // ********************************
 	constructSchedule(currentClockCycle);
 	dispatchReq(currentClockCycle);
-
-
-
-	cout << "transactionQueue.size(): " << transactionQueue.size() << endl;
-	for (size_t i=0;i<transactionQueue.size();i++)
-	{
-		//pop off top transaction from queue
-		//
-		//	assuming simple scheduling at the moment
-		//	will eventually add policies here
-		Transaction *transaction = transactionQueue[i];
-		cout << "CPU ID: " << transaction->core << endl;
-		//map address to rank,bank,row,col
-		unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
-
-		// pass these in as references so they get set by the addressMapping function
-		addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
-
-		//if we have room, break up the transaction into the appropriate commands
-		//and add them to the command queue
-		if (commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank))
-		{
-			if (DEBUG_ADDR_MAP) 
-			{
-				PRINTN("== New Transaction - Mapping Address [0x" << hex << transaction->address << dec << "]");
-				if (transaction->transactionType == DATA_READ) 
-				{
-					PRINT(" (Read)");
-				}
-				else
-				{
-					PRINT(" (Write)");
-				}
-				PRINT("  Rank : " << newTransactionRank);
-				PRINT("  Bank : " << newTransactionBank);
-				PRINT("  Row  : " << newTransactionRow);
-				PRINT("  Col  : " << newTransactionColumn);
-			}
-
-
-
-			//now that we know there is room in the command queue, we can remove from the transaction queue
-			transactionQueue.erase(transactionQueue.begin()+i);
-
-			//create activate command to the row we just translated
-			BusPacket *ACTcommand = new BusPacket(ACTIVATE, transaction->address,
-					newTransactionColumn, newTransactionRow, newTransactionRank,
-					newTransactionBank, 0, dramsim_log);
-
-			//create read or write command and enqueue it
-			BusPacketType bpType = transaction->getBusPacketType();
-			BusPacket *command = new BusPacket(bpType, transaction->address,
-					newTransactionColumn, newTransactionRow, newTransactionRank,
-					newTransactionBank, transaction->data, dramsim_log);
-
-
-
-			commandQueue.enqueue(ACTcommand);
-			commandQueue.enqueue(command);
-
-			// If we have a read, save the transaction so when the data comes back
-			// in a bus packet, we can staple it back into a transaction and return it
-			if (transaction->transactionType == DATA_READ)
-			{
-				pendingReadTransactions.push_back(transaction);
-			}
-			else
-			{
-				// just delete the transaction now that it's a buspacket
-				delete transaction; 
-			}
-			/* only allow one transaction to be scheduled per cycle -- this should
-			 * be a reasonable assumption considering how much logic would be
-			 * required to schedule multiple entries per cycle (parallel data
-			 * lines, switching logic, decision logic)
-			 */
-			break;
-		}
-		else // no room, do nothing this cycle
-		{
-			//PRINT( "== Warning - No room in command queue" << endl;
-		}
-	}
-
+ // ********************************
 
 	//calculate power
 	//  this is done on a per-rank basis, since power characterization is done per device (not per bank)
@@ -989,13 +927,172 @@ void MemoryController::insertHistogram(unsigned latencyValue, unsigned rank, uns
 // to construct SecMC schedule
 void MemoryController::constructSchedule(uint64_t curClock)
 {
+	// cout << "In constructSchedule" << endl;
 	if(curClock != epochStart)
 		return;
 
 	epochStart = curClock + CYCLE_LENGTH;
+	cout << "turn: " << turn << " epochStart " << epochStart << endl;
+	// copy current schedule to prev schedule
+	for(int i=0;i<3;i++)
+		for(int j=0;j<4;j++)
+			prevSch[i][j] = sch[i][j];
 
 	// real construction starts here
-	
+	// move all requests currently residing on transaction queue to seperate rank queues.
+	vector<Transaction *>::iterator	ii;
+	cout << "transactionQueue size: " << transactionQueue.size() << endl;
+	for(ii = transactionQueue.begin(); ii != transactionQueue.end();)
+	{
+		Transaction *transaction = *ii;
+		cout << "core: " << transaction->core << endl;
+		if(transaction->core == turn){
+			unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
+			addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
+			
+			// push this transaction in Rank queue and remove from transaction queue
+			rankQ[turn][newTransactionRank].push_back(transaction);
+			cout << "turn: " << turn <<  " rank: " << newTransactionRank << " rank_size: " << rankQ[turn][newTransactionRank].size() << endl;
+			ii = transactionQueue.erase(ii);
+		}
+		else
+			++ii;
+	}	
 
+	vector <uint64_t > pktsInRank(NUM_RANKS,0);
+	for(size_t i=0;i<NUM_RANKS;i++){
+		pktsInRank[i] = rankQ[turn][i].size();
+	}
+
+  	priority_queue<pair<double, int>> q;
+	for (int i = 0; i < NUM_RANKS; ++i) {
+		q.push(pair<double, int>(pktsInRank[i], i));
+	}
+	
+	
+	// Rank re-ordering
+	for(int i=0;i<3;i++){
+		int R = q.top().second;	
+		for(int j=0;j<3;j++){
+			if(prevSch[j][0] == R){
+				sch[j][0] = R;
+				break;
+			}
+			if(j==3)
+				sch[0][0] = R;	
+		}
+		q.pop();
+	}
+
+	cout << "current schedule" << endl;
+	for(int i=0;i<3;i++){
+			cout << sch[i][0] << " " << sch[i][1] << " " << sch[i][2] << " " << sch[i][3] << " " << endl;
+		}
+
+	cout << "Previous schedule" << endl;
+	for(int i=0;i<3;i++){
+			cout << prevSch[i][0] << " " << prevSch[i][1] << " " << prevSch[i][2] << " " << prevSch[i][3] << " " << endl;
+		}
+
+
+	// change turn
+	if(turn == 3)
+		turn = 0;
+	else
+		turn++;		
 }
 
+void MemoryController::dispatchReq(uint64_t curClock){
+
+	// cout << "In dispatchReq" << endl;
+	if(curClock != dispatchTick)
+		return;
+	cout << "dispatchTick: " << dispatchTick << endl;
+
+	for(int i=0;i<rankQ[turn][sch[rankIndx][0]].size();i++){
+
+		Transaction *transaction = rankQ[turn][sch[rankIndx][0]][i];
+		unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
+		addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
+
+		cout << "reordering bank now" << endl;
+		// bank reordering
+
+		// dispatch if no bank timing violation
+		if(noBankViolation(newTransactionBank)){
+			cout << "noBankViolation" << endl;
+			sch[rankIndx][bankIndx] = newTransactionBank;
+			if (commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank))
+			{
+				cout << "hasRoomFor commands" << endl;
+				//now that we know there is room in the command queue, we can remove from the transaction queue
+				rankQ[turn][sch[rankIndx][0]].erase(rankQ[turn][sch[rankIndx][0]].begin() + i);
+			
+				//create activate command to the row we just translated
+				BusPacket *ACTcommand = new BusPacket(ACTIVATE, transaction->address,
+						newTransactionColumn, newTransactionRow, newTransactionRank,
+						newTransactionBank, 0, dramsim_log);
+
+				//create read or write command and enqueue it
+				BusPacketType bpType = transaction->getBusPacketType();
+				BusPacket *command = new BusPacket(bpType, transaction->address,
+						newTransactionColumn, newTransactionRow, newTransactionRank,
+						newTransactionBank, transaction->data, dramsim_log);
+
+
+
+				commandQueue.enqueue(ACTcommand);
+				commandQueue.enqueue(command);
+				cout << "command enqueued" << endl;
+				// If we have a read, save the transaction so when the data comes back
+				// in a bus packet, we can staple it back into a transaction and return it
+				if (transaction->transactionType == DATA_READ)
+				{
+					pendingReadTransactions.push_back(transaction);
+				}
+				else
+				{
+					// just delete the transaction now that it's a buspacket
+					delete transaction; 
+				}
+				break;					
+			}	
+			else
+			{
+				//  go to next iteration
+				cout << "next iteration" << endl;
+			}
+		}
+	}
+
+	//update rank and bank index in schedule
+	if(rankIndx==2)
+		rankIndx = 0;
+	else
+		rankIndx++;
+	if(bankIndx==4)
+		bankIndx = 1;
+	else
+		bankIndx++;
+
+	dispatchTick += T_RANK;
+}
+
+bool MemoryController::noBankViolation(unsigned bank){
+	// same schedule violations
+	for(int i=bankIndx-1; i>0; i--){
+		if(bank == sch[rankIndx][i])
+			return false;
+	}
+
+	// prev schedule violations
+	if(sch[rankIndx][0] != prevSch[rankIndx][0])
+		return true;
+	else{
+		for(int i=bankIndx+1; i<=3;i++){
+			if(bank == prevSch[rankIndx][i])
+				return false;
+		}
+		return true;
+	}
+}

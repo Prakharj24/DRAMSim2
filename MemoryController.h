@@ -46,6 +46,7 @@
 #include "Rank.h"
 #include "CSVWriter.h"
 #include <map>
+#include <queue>
 
 using namespace std;
 
@@ -68,7 +69,9 @@ public:
 	void update();
 	void printStats(bool finalStats = false);
 	void resetStats(); 
-
+	void constructSchedule(uint64_t curClock);
+	void dispatchReq(uint64_t curClock);
+	bool noBankViolation(unsigned bank);
 
 	//fields
 	vector<Transaction *> transactionQueue;
@@ -122,6 +125,14 @@ private:
 
 
 	unsigned refreshRank;
+
+	// SecMC-NI related attributes
+	vector< vector<Transaction *> > rankQ[4];
+	uint64_t prevSch[3][4], sch[3][4];
+ 	uint64_t dispatchTick, epochStart;
+	uint64_t rankIndx, bankIndx, turn;
+	const int T_RANK = 6;
+	const int CYCLE_LENGTH = 54;
 	
 public:
 	// energy values are per rank -- SST uses these directly, so make these public 
