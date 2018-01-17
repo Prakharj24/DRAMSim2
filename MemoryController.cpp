@@ -113,7 +113,8 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	
 	epochStart = 0;
 	dispatchTick = 0;
-
+	rankIndx = 0;
+	bankIndx = 0;
 	for(int i=0; i<4;i++){
 		rankQ[i].reserve(NUM_RANKS);
 		for(size_t j=0;j<NUM_RANKS;j++){
@@ -972,27 +973,20 @@ void MemoryController::constructSchedule(uint64_t curClock)
 	
 	// Rank re-ordering
 	for(int i=0;i<3;i++){
-		int R = q.top().second;	
-		for(int j=0;j<3;j++){
+		int R = q.top().second;
+		int j=0;	
+		for(j=0;j<3;j++){
 			if(prevSch[j][0] == R){
 				sch[j][0] = R;
 				break;
 			}
-			if(j==3)
-				sch[0][0] = R;	
 		}
+		if(j==3){
+			sch[i][0] = R;	
+		}
+		cout << endl;
 		q.pop();
 	}
-
-	cout << "current schedule" << endl;
-	for(int i=0;i<3;i++){
-			cout << sch[i][0] << " " << sch[i][1] << " " << sch[i][2] << " " << sch[i][3] << " " << endl;
-		}
-
-	cout << "Previous schedule" << endl;
-	for(int i=0;i<3;i++){
-			cout << prevSch[i][0] << " " << prevSch[i][1] << " " << prevSch[i][2] << " " << prevSch[i][3] << " " << endl;
-		}
 
 
 	// change turn
@@ -1010,7 +1004,6 @@ void MemoryController::dispatchReq(uint64_t curClock){
 	cout << "dispatchTick: " << dispatchTick << endl;
 
 	for(int i=0;i<rankQ[turn][sch[rankIndx][0]].size();i++){
-
 		Transaction *transaction = rankQ[turn][sch[rankIndx][0]][i];
 		unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
 		addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
@@ -1076,6 +1069,18 @@ void MemoryController::dispatchReq(uint64_t curClock){
 		bankIndx++;
 
 	dispatchTick += T_RANK;
+
+
+	cout << "current schedule" << endl;
+	for(int i=0;i<3;i++){
+			cout << sch[i][0] << " " << sch[i][1] << " " << sch[i][2] << " " << sch[i][3] << " " << endl;
+		}
+
+	cout << "Previous schedule" << endl;
+	for(int i=0;i<3;i++){
+			cout << prevSch[i][0] << " " << prevSch[i][1] << " " << prevSch[i][2] << " " << prevSch[i][3] << " " << endl;
+		}
+
 }
 
 bool MemoryController::noBankViolation(unsigned bank){
