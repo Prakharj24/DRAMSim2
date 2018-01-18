@@ -114,7 +114,7 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	epochStart = 0;
 	dispatchTick = 0;
 	rankIndx = 0;
-	bankIndx = 0;
+	bankIndx = 1;
 	for(int i=0; i<4;i++){
 		rankQ[i].reserve(NUM_RANKS);
 		for(size_t j=0;j<NUM_RANKS;j++){
@@ -122,7 +122,7 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 		}
 	}
 
-	uint64_t M = max(NUM_RANKS, NUM_BANKS);
+	uint64_t M = max(NUM_RANKS, NUM_BANKS) + 1;
 	for(int i=0;i<3;i++){
 		for(int j=0;j<4;j++){
 			sch[i][j] = M;
@@ -939,21 +939,27 @@ void MemoryController::constructSchedule(uint64_t curClock)
 		for(int j=0;j<4;j++)
 			prevSch[i][j] = sch[i][j];
 
+	// reset current schedule
+	for(int i=0;i<3;i++)
+		for(int j=0;j<4;j++)
+			sch[i][j] = max(NUM_RANKS, NUM_BANKS) + 1;
+
+
 	// real construction starts here
 	// move all requests currently residing on transaction queue to seperate rank queues.
 	vector<Transaction *>::iterator	ii;
-	cout << "transactionQueue size: " << transactionQueue.size() << endl;
+	// cout << "transactionQueue size: " << transactionQueue.size() << endl;
 	for(ii = transactionQueue.begin(); ii != transactionQueue.end();)
 	{
 		Transaction *transaction = *ii;
-		cout << "core: " << transaction->core << endl;
+		// cout << "core: " << transaction->core << endl;
 		if(transaction->core == turn){
 			unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
 			addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
 			
 			// push this transaction in Rank queue and remove from transaction queue
 			rankQ[turn][newTransactionRank].push_back(transaction);
-			cout << "turn: " << turn <<  " rank: " << newTransactionRank << " rank_size: " << rankQ[turn][newTransactionRank].size() << endl;
+			// cout << "turn: " << turn <<  " rank: " << newTransactionRank << " rank_size: " << rankQ[turn][newTransactionRank].size() << endl;
 			ii = transactionQueue.erase(ii);
 		}
 		else
@@ -984,7 +990,7 @@ void MemoryController::constructSchedule(uint64_t curClock)
 		if(j==3){
 			sch[i][0] = R;	
 		}
-		cout << endl;
+		// cout << endl;
 		q.pop();
 	}
 
@@ -993,7 +999,9 @@ void MemoryController::constructSchedule(uint64_t curClock)
 	if(turn == 3)
 		turn = 0;
 	else
-		turn++;		
+		turn++;	
+
+		cout << endl << endl;	
 }
 
 void MemoryController::dispatchReq(uint64_t curClock){
@@ -1012,7 +1020,7 @@ void MemoryController::dispatchReq(uint64_t curClock){
 		// bank reordering
 
 		// dispatch if no bank timing violation
-		if(noBankViolation(newTransactionBank)){
+		// if(noBankViolation(newTransactionBank)){
 			cout << "noBankViolation" << endl;
 			sch[rankIndx][bankIndx] = newTransactionBank;
 			if (commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank))
@@ -1036,7 +1044,7 @@ void MemoryController::dispatchReq(uint64_t curClock){
 
 				commandQueue.enqueue(ACTcommand);
 				commandQueue.enqueue(command);
-				cout << "command enqueued" << endl;
+				// cout << "command enqueued" << endl;
 				// If we have a read, save the transaction so when the data comes back
 				// in a bus packet, we can staple it back into a transaction and return it
 				if (transaction->transactionType == DATA_READ)
@@ -1055,18 +1063,21 @@ void MemoryController::dispatchReq(uint64_t curClock){
 				//  go to next iteration
 				cout << "next iteration" << endl;
 			}
-		}
+		// }
 	}
 
+	cout << rankIndx << ", " << bankIndx << endl;
 	//update rank and bank index in schedule
-	if(rankIndx==2)
+	if(rankIndx==2){
 		rankIndx = 0;
-	else
-		rankIndx++;
-	if(bankIndx==4)
-		bankIndx = 1;
+		if(bankIndx==3)
+			bankIndx = 1;
 	else
 		bankIndx++;
+
+	}
+	else
+		rankIndx++;
 
 	dispatchTick += T_RANK;
 
