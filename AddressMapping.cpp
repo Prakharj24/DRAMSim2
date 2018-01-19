@@ -48,10 +48,10 @@ void addressMapping(uint64_t physicalAddress, unsigned &newTransactionChan, unsi
 	// Since we're assuming that a request is for BL*BUS_WIDTH, the bottom bits
 	// of this address *should* be all zeros if it's not, issue a warning
 
-//	if ((physicalAddress & transactionMask) != 0)
-//	{
-//		DEBUG("WARNING: address 0x"<<std::hex<<physicalAddress<<std::dec<<" is not aligned to the request size of "<<transactionSize); 
-//	}
+	if ((physicalAddress & transactionMask) != 0)
+	{
+		DEBUG("WARNING: address 0x"<<std::hex<<physicalAddress<<std::dec<<" is not aligned to the request size of "<<transactionSize); 
+	}
 
 	// each burst will contain JEDEC_DATA_BUS_BITS/8 bytes of data, so the bottom bits (3 bits for a single channel DDR system) are
 	// 	thrown away before mapping the other bits
