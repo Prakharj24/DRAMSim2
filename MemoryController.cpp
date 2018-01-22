@@ -40,6 +40,7 @@
 #include "AddressMapping.h"
 
 #define SEQUENTIAL(rank,bank) (rank*NUM_BANKS)+bank
+#define RB_MAX (max(NUM_RANKS, NUM_BANKS) + 1)
 
 /* Power computations are localized to MemoryController.cpp */ 
 extern unsigned IDD0;
@@ -928,12 +929,11 @@ void MemoryController::insertHistogram(unsigned latencyValue, unsigned rank, uns
 // to construct SecMC schedule
 void MemoryController::constructSchedule(uint64_t curClock)
 {
-	// cout << "In constructSchedule" << endl;
 	if(curClock != epochStart)
 		return;
-
+	// cout << "turn: " << turn << " epochStart " << epochStart << endl;
 	epochStart = curClock + CYCLE_LENGTH;
-	cout << "turn: " << turn << " epochStart " << epochStart << endl;
+	
 	// copy current schedule to prev schedule
 	for(int i=0;i<3;i++)
 		for(int j=0;j<4;j++)
@@ -944,129 +944,177 @@ void MemoryController::constructSchedule(uint64_t curClock)
 		for(int j=0;j<4;j++)
 			sch[i][j] = max(NUM_RANKS, NUM_BANKS) + 1;
 
-
-	// real construction starts here
-	// move all requests currently residing on transaction queue to seperate rank queues.
-	vector<Transaction *>::iterator	ii;
-	// cout << "transactionQueue size: " << transactionQueue.size() << endl;
-	for(ii = transactionQueue.begin(); ii != transactionQueue.end();)
-	{
-		Transaction *transaction = *ii;
-		// cout << "core: " << transaction->core << endl;
-		if(transaction->core == turn){
-			unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
-			addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
-			
-			// push this transaction in Rank queue and remove from transaction queue
-			rankQ[turn][newTransactionRank].push_back(transaction);
-			// cout << "turn: " << turn <<  " rank: " << newTransactionRank << " rank_size: " << rankQ[turn][newTransactionRank].size() << endl;
-			ii = transactionQueue.erase(ii);
-		}
-		else
-			++ii;
-	}	
-
-	vector <uint64_t > pktsInRank(NUM_RANKS,0);
-	for(size_t i=0;i<NUM_RANKS;i++){
-		pktsInRank[i] = rankQ[turn][i].size();
-	}
-
-  	priority_queue<pair<double, int>> q;
-	for (int i = 0; i < NUM_RANKS; ++i) {
-		q.push(pair<double, int>(pktsInRank[i], i));
-	}
-	
-	
-	// Rank re-ordering
-	for(int i=0;i<3;i++){
-		int R = q.top().second;
-		int j=0;	
-		for(j=0;j<3;j++){
-			if(prevSch[j][0] == R){
-				sch[j][0] = R;
-				break;
-			}
-		}
-		if(j==3){
-			sch[i][0] = R;	
-		}
-		// cout << endl;
-		q.pop();
-	}
-
-
 	// change turn
 	if(turn == 3)
 		turn = 0;
 	else
 		turn++;	
 
-		cout << endl << endl;	
+
+	// real construction starts here
+	// move all requests currently residing on transaction queue to seperate rank queues.
+	vector<Transaction *>::iterator	ii;
+	for(ii = transactionQueue.begin(); ii != transactionQueue.end();)
+	{
+		Transaction *transaction = *ii;
+		if(transaction->core == turn){
+			unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
+			addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
+			
+			// push this transaction in Rank queue and remove from transaction queue
+			rankQ[turn][newTransactionRank].push_back(transaction);
+			// cout << "adding rank: " << newTransactionRank << " address: " << transaction->address << endl;	
+			ii = transactionQueue.erase(ii);
+		}
+		else
+			++ii;
+	}	
+
+	// cout << "turn: " << turn << endl;
+	// for(int i=0; i < NUM_RANKS;i++){
+	// 	cout << "rank: " << i << " size: " << rankQ[turn][i].size() <<  endl;
+	// 	cout << "---------------------" << endl;
+	// 	for(int j=0; j < rankQ[turn][i].size() ; j++)
+	// 	{
+	// 		Transaction *transaction = rankQ[turn][i][j];
+	// 		// cout << "core: " << transaction->core << endl;
+	// 			unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
+	// 			addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
+	// 			cout << "address: " << transaction->address << " rank: " << newTransactionRank << " bank: " << newTransactionBank << endl;
+				
+	// 	}
+	// 	cout << "---------------------" << endl;
+	// }	
+
+	// cout << "packets in ranks: ";
+	vector <uint64_t > pktsInRank(NUM_RANKS,0);
+	for(size_t i=0;i<NUM_RANKS;i++){
+		pktsInRank[i] = rankQ[turn][i].size();
+		// cout << pktsInRank[i] << " ";
+	}
+	// cout << endl;
+
+  	priority_queue<pair<double, int>> q;
+	for (int i = 0; i < NUM_RANKS; ++i) {
+		q.push(pair<double, int>(pktsInRank[i], i));
+	}
+	
+	// cout << "priority queue: ";
+	vector<int> topThree;
+	for(int i=0;i<3;i++){
+		topThree.push_back(q.top().second);
+		// cout << topThree[i] << " ";
+		q.pop();
+	}
+	// cout << endl;
+	
+	// Rank re-ordering
+	
+	for(int i=0;i<3;i++){
+		for(int j=0;j<topThree.size();j++){
+			if(prevSch[i][0] == topThree[j]){
+				sch[i][0] = topThree[j];
+				topThree.erase(topThree.begin() + j);
+				break;
+			}
+		}
+	}
+
+	// cout << "remaining size: " << topThree.size() << endl;
+	for(int i=0;i<topThree.size();i++){
+		for(int j=0;j<3;j++){
+			if(sch[j][0] == RB_MAX){
+				sch[j][0] = *topThree.begin();
+				topThree.erase(topThree.begin());
+			}
+		}
+	}
+
+
+
+	// cout << endl;
+	// cout << "rank order: " << prevSch[0][0] << " " << prevSch[1][0] << " " << prevSch[2][0] << endl;
+	// cout << "rank order: " << sch[0][0] << " " << sch[1][0] << " " << sch[2][0] << endl;
+
+	// 	cout << "-----------------------------------------" << endl << endl;	
 }
 
 void MemoryController::dispatchReq(uint64_t curClock){
 
-	// cout << "In dispatchReq" << endl;
 	if(curClock != dispatchTick)
 		return;
-	cout << "dispatchTick: " << dispatchTick << endl;
+	// cout << "dispatchTick: " << dispatchTick << endl;
+	// cout << sch[rankIndx][0] << ", " << sch[rankIndx][bankIndx] << endl;
 
+	// cout << "turn: " << turn << endl;
+	// for(int i=0; i < NUM_RANKS;i++){
+	// 	cout << "rank: " << i << " size: " << rankQ[turn][i].size() <<  endl;
+	// 	cout << "---------------------" << endl;
+	// 	for(int j=0; j < rankQ[turn][i].size() ; j++)
+	// 	{
+	// 		Transaction *transaction = rankQ[turn][i][j];
+	// 		// cout << "core: " << transaction->core << endl;
+	// 			unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
+	// 			addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
+	// 			cout << "address: " << transaction->address << " rank: " << newTransactionRank << " bank: " << newTransactionBank << endl;
+				
+	// 	}
+	// 	cout << "---------------------" << endl;
+	// }
+		
 	for(int i=0;i<rankQ[turn][sch[rankIndx][0]].size();i++){
 		Transaction *transaction = rankQ[turn][sch[rankIndx][0]][i];
 		unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
 		addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
 
-		cout << "reordering bank now" << endl;
+		// cout << "rank " << sch[rankIndx][0] << "has packet" << endl;
 		// bank reordering
 
 		// dispatch if no bank timing violation
-		// if(noBankViolation(newTransactionBank)){
-			cout << "noBankViolation" << endl;
+		if(noBankViolation(newTransactionBank) && commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank)){
+			// cout << "noBankViolation" << endl;
 			sch[rankIndx][bankIndx] = newTransactionBank;
-			if (commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank))
+			// cout << "packet address: " << transaction->address << endl;
+			//now that we know there is room in the command queue, we can remove from the transaction queue
+			rankQ[turn][sch[rankIndx][0]].erase(rankQ[turn][sch[rankIndx][0]].begin() + i);
+		
+			//create activate command to the row we just translated
+			BusPacket *ACTcommand = new BusPacket(ACTIVATE, transaction->address,
+					newTransactionColumn, newTransactionRow, newTransactionRank,
+					newTransactionBank, 0, dramsim_log);
+
+			//create read or write command and enqueue it
+			BusPacketType bpType = transaction->getBusPacketType();
+			BusPacket *command = new BusPacket(bpType, transaction->address,
+					newTransactionColumn, newTransactionRow, newTransactionRank,
+					newTransactionBank, transaction->data, dramsim_log);
+
+
+
+			commandQueue.enqueue(ACTcommand);
+			commandQueue.enqueue(command);
+			// cout << "command enqueued" << endl;
+			// If we have a read, save the transaction so when the data comes back
+			// in a bus packet, we can staple it back into a transaction and return it
+			if (transaction->transactionType == DATA_READ)
 			{
-				cout << "hasRoomFor commands" << endl;
-				//now that we know there is room in the command queue, we can remove from the transaction queue
-				rankQ[turn][sch[rankIndx][0]].erase(rankQ[turn][sch[rankIndx][0]].begin() + i);
-			
-				//create activate command to the row we just translated
-				BusPacket *ACTcommand = new BusPacket(ACTIVATE, transaction->address,
-						newTransactionColumn, newTransactionRow, newTransactionRank,
-						newTransactionBank, 0, dramsim_log);
-
-				//create read or write command and enqueue it
-				BusPacketType bpType = transaction->getBusPacketType();
-				BusPacket *command = new BusPacket(bpType, transaction->address,
-						newTransactionColumn, newTransactionRow, newTransactionRank,
-						newTransactionBank, transaction->data, dramsim_log);
-
-
-
-				commandQueue.enqueue(ACTcommand);
-				commandQueue.enqueue(command);
-				// cout << "command enqueued" << endl;
-				// If we have a read, save the transaction so when the data comes back
-				// in a bus packet, we can staple it back into a transaction and return it
-				if (transaction->transactionType == DATA_READ)
-				{
-					pendingReadTransactions.push_back(transaction);
-				}
-				else
-				{
-					// just delete the transaction now that it's a buspacket
-					delete transaction; 
-				}
-				break;					
-			}	
+				pendingReadTransactions.push_back(transaction);
+			}
 			else
 			{
-				//  go to next iteration
-				cout << "next iteration" << endl;
+				// just delete the transaction now that it's a buspacket
+				delete transaction; 
 			}
-		// }
+			break;
+		}							
+		else
+		{
+				//  go to next iteration
+				// cout << "next iteration" << endl;
+		}
 	}
 
-	cout << rankIndx << ", " << bankIndx << endl;
+
 	//update rank and bank index in schedule
 	if(rankIndx==2){
 		rankIndx = 0;
@@ -1082,15 +1130,15 @@ void MemoryController::dispatchReq(uint64_t curClock){
 	dispatchTick += T_RANK;
 
 
-	cout << "current schedule" << endl;
-	for(int i=0;i<3;i++){
-			cout << sch[i][0] << " " << sch[i][1] << " " << sch[i][2] << " " << sch[i][3] << " " << endl;
-		}
+	// cout << "current schedule" << endl;
+	// for(int i=0;i<3;i++){
+	// 		cout << sch[i][0] << " " << sch[i][1] << " " << sch[i][2] << " " << sch[i][3] << " " << endl;
+	// 	}
 
-	cout << "Previous schedule" << endl;
-	for(int i=0;i<3;i++){
-			cout << prevSch[i][0] << " " << prevSch[i][1] << " " << prevSch[i][2] << " " << prevSch[i][3] << " " << endl;
-		}
+	// cout << "Previous schedule" << endl;
+	// for(int i=0;i<3;i++){
+	// 		cout << prevSch[i][0] << " " << prevSch[i][1] << " " << prevSch[i][2] << " " << prevSch[i][3] << " " << endl;
+	// 	}
 
 }
 
