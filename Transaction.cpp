@@ -46,7 +46,23 @@ namespace DRAMSim {
 Transaction::Transaction(TransactionType transType, uint64_t addr, void *dat) :
 	transactionType(transType),
 	address(addr),
-	data(dat)
+	data(dat) 
+{}
+
+
+Transaction::Transaction(TransactionType transType, uint64_t addr, void *dat, uint32_t _core) :
+	transactionType(transType),
+	address(addr),
+	data(dat), 
+    core(_core)
+{}
+
+Transaction::Transaction(TransactionType transType, uint64_t addr, void *dat, uint32_t _core, bool _isPrefetch) :
+	transactionType(transType),
+	address(addr),
+	data(dat), 
+    core(_core),
+    isPrefetch(_isPrefetch)
 {}
 
 Transaction::Transaction(const Transaction &t)

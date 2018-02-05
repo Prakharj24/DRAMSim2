@@ -447,6 +447,12 @@ bool MultiChannelMemorySystem::addTransaction(bool isWrite, uint64_t addr)
 	return channels[channelNumber]->addTransaction(isWrite, addr); 
 }
 
+bool MultiChannelMemorySystem::addTransaction(bool isWrite, uint64_t addr, uint32_t core, bool isPrefetch)
+{
+	unsigned channelNumber = findChannelNumber(addr); 
+	return channels[channelNumber]->addTransaction(isWrite, addr, core, isPrefetch); 
+}
+
 /*
 	This function has two flavors: one with and without the address. 
 	If the simulator won't give us an address and we have multiple channels, 

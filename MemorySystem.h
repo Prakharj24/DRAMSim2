@@ -60,6 +60,8 @@ public:
 	void update();
 	bool addTransaction(Transaction *trans);
 	bool addTransaction(bool isWrite, uint64_t addr);
+	bool addTransaction(bool isWrite, uint64_t addr, uint32_t core);
+	bool addTransaction(bool isWrite, uint64_t addr, uint32_t core, bool isPrefetch);
 	void printStats(bool finalStats);
 	bool WillAcceptTransaction();
 	void RegisterCallbacks(
