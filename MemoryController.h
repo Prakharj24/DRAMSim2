@@ -85,7 +85,7 @@ private:
 	ostream &dramsim_log;
 	vector< vector <BankState> > bankStates;
 	//functions
-	void insertHistogram(unsigned latencyValue, unsigned rank, unsigned bank);
+	void insertHistogram(unsigned latencyValue, unsigned rank, unsigned bank, unsigned core, bool isPrefetch);
 
 	//fields
 	MemorySystem *parentMemorySystem;
@@ -112,15 +112,18 @@ private:
 	unsigned dataCyclesLeft;
 
 	uint64_t totalTransactions;
-	vector<uint64_t> grandTotalBankAccesses; 
-	vector<uint64_t> totalReadsPerBank;
-	vector<uint64_t> totalWritesPerBank;
+	vector<long long int> grandTotalBankAccesses; 
 
 	vector<uint64_t> totalReadsPerRank;
 	vector<uint64_t> totalWritesPerRank;
 
 
-	vector< uint64_t > totalEpochLatency;
+        vector<double> totalLatency;
+        vector<double> totalLatencyPref;
+	uint64_t totalReads[4];
+	uint64_t totalPrefReads[4];
+	uint64_t totalWrites[4];
+	
 
 	unsigned channelBitWidth;
 	unsigned rankBitWidth;
@@ -128,7 +131,6 @@ private:
 	unsigned rowBitWidth;
 	unsigned colBitWidth;
 	unsigned byteOffsetWidth;
-
 
 	unsigned refreshRank;
 	
