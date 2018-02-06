@@ -86,11 +86,8 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	//reserve memory for vectors
 	transactionQueue.reserve(TRANS_QUEUE_DEPTH);
 	powerDown = vector<bool>(NUM_RANKS,false);
-	grandTotalBankAccesses = vector<uint64_t>(NUM_RANKS*NUM_BANKS,0);
-	totalReadsPerBank = vector<uint64_t>(NUM_RANKS*NUM_BANKS,0);
-	totalWritesPerBank = vector<uint64_t>(NUM_RANKS*NUM_BANKS,0);
-	totalReadsPerRank = vector<uint64_t>(NUM_RANKS,0);
-	totalWritesPerRank = vector<uint64_t>(NUM_RANKS,0);
+	grandTotalBankAccesses = vector<long long int>(NUM_RANKS*NUM_BANKS,0);
+
 
 	writeDataCountdown.reserve(NUM_RANKS);
 	writeDataToSend.reserve(NUM_RANKS);
@@ -102,7 +99,16 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	actpreEnergy = vector <uint64_t> (NUM_RANKS,0);
 	refreshEnergy = vector <uint64_t> (NUM_RANKS,0);
 
-	totalEpochLatency = vector<uint64_t> (NUM_RANKS*NUM_BANKS,0);
+
+	totalLatency  = vector<double>(4,0.0);
+	totalLatencyPref = vector<double>(4,0.0);
+
+
+        for(int i=0;i<4;i++){
+            totalReads[i] = 0;
+            totalPrefReads[i] = 0;
+            totalWrites[i] = 0;
+        }
 
 	//staggers when each rank is due for a refresh
 	for (size_t i=0;i<NUM_RANKS;i++)
@@ -151,7 +157,6 @@ void MemoryController::receiveFromBus(BusPacket *bpacket)
 
 	//add to return read data queue
 	returnTransaction.push_back(new Transaction(RETURN_DATA, bpacket->physicalAddress, bpacket->data));
-	totalReadsPerBank[SEQUENTIAL(bpacket->rank,bpacket->bank)]++;
 
 	// this delete statement saves a mindboggling amount of memory
 	delete(bpacket);
@@ -275,7 +280,7 @@ void MemoryController::update()
 			dataCyclesLeft = BL/2;
 
 			totalTransactions++;
-			totalWritesPerBank[SEQUENTIAL(writeDataToSend[0]->rank,writeDataToSend[0]->bank)]++;
+			//totalWritesPerBank[][SEQUENTIAL(writeDataToSend[0]->rank,writeDataToSend[0]->bank)]++;
 
 			writeDataCountdown.erase(writeDataCountdown.begin());
 			writeDataToSend.erase(writeDataToSend.begin());
@@ -628,7 +633,7 @@ void MemoryController::update()
 				//	}
 				unsigned chan,rank,bank,row,col;
 				addressMapping(returnTransaction[0]->address,chan,rank,bank,row,col);
-				insertHistogram(currentClockCycle-pendingReadTransactions[i]->timeAdded,rank,bank);
+				insertHistogram(currentClockCycle-pendingReadTransactions[i]->timeAdded,rank,bank, pendingReadTransactions[i]->core, pendingReadTransactions[i]->isPrefetch);
 				//return latency
 				returnReadData(pendingReadTransactions[i]);
 
@@ -729,179 +734,72 @@ bool MemoryController::addTransaction(Transaction *trans)
 
 void MemoryController::resetStats()
 {
-	for (size_t i=0; i<NUM_RANKS; i++)
-	{
-		for (size_t j=0; j<NUM_BANKS; j++)
-		{
-			//XXX: this means the bank list won't be printed for partial epochs
-			grandTotalBankAccesses[SEQUENTIAL(i,j)] += totalReadsPerBank[SEQUENTIAL(i,j)] + totalWritesPerBank[SEQUENTIAL(i,j)];
-			totalReadsPerBank[SEQUENTIAL(i,j)] = 0;
-			totalWritesPerBank[SEQUENTIAL(i,j)] = 0;
-			totalEpochLatency[SEQUENTIAL(i,j)] = 0;
-		}
 
-		burstEnergy[i] = 0;
-		actpreEnergy[i] = 0;
-		refreshEnergy[i] = 0;
-		backgroundEnergy[i] = 0;
-		totalReadsPerRank[i] = 0;
-		totalWritesPerRank[i] = 0;
-	}
+	// for(size_t c=0;c<4;c++){	
+	// 	for (size_t i=0; i<NUM_RANKS; i++)
+	// 	{
+	// 		for (size_t j=0; j<NUM_BANKS; j++)
+	// 		{
+	// 			//XXX: this means the bank list won't be printed for partial epochs
+	// 			grandTotalBankAccesses[SEQUENTIAL(i,j)] += totalReadsPerBank[c][SEQUENTIAL(i,j)] + totalWritesPerBank[c][SEQUENTIAL(i,j)];
+	// 			totalReadsPerBank[c][SEQUENTIAL(i,j)] = 0;
+	// 			totalWritesPerBank[c][SEQUENTIAL(i,j)] = 0;
+	// 			totalEpochLatency[c][SEQUENTIAL(i,j)] = 0;
+	// 		}
+
+	// 		burstEnergy[i] = 0;
+	// 		actpreEnergy[i] = 0;
+	// 		refreshEnergy[i] = 0;
+	// 		backgroundEnergy[i] = 0;
+	// 		totalReadsPerRank[i] = 0;
+	// 		totalWritesPerRank[i] = 0;
+	// 	}
+	// }
+
 }
 //prints statistics at the end of an epoch or  simulation
 void MemoryController::printStats(bool finalStats)
 {
 	unsigned myChannel = parentMemorySystem->systemID;
 
-	//if we are not at the end of the epoch, make sure to adjust for the actual number of cycles elapsed
-
-	uint64_t cyclesElapsed = (currentClockCycle % EPOCH_LENGTH == 0) ? EPOCH_LENGTH : currentClockCycle % EPOCH_LENGTH;
 	unsigned bytesPerTransaction = (JEDEC_DATA_BUS_BITS*BL)/8;
 	uint64_t totalBytesTransferred = totalTransactions * bytesPerTransaction;
-	double secondsThisEpoch = (double)cyclesElapsed * tCK * 1E-9;
+	double totalSeconds = (double)currentClockCycle * tCK * 1E-9;
 
-	// only per rank
-	vector<double> backgroundPower = vector<double>(NUM_RANKS,0.0);
-	vector<double> burstPower = vector<double>(NUM_RANKS,0.0);
-	vector<double> refreshPower = vector<double>(NUM_RANKS,0.0);
-	vector<double> actprePower = vector<double>(NUM_RANKS,0.0);
-	vector<double> averagePower = vector<double>(NUM_RANKS,0.0);
+	vector <double> bandwidthDemand(4,0.0);
+	vector <double> bandwidthPref(4,0.0);
 
-	// per bank variables
-	vector<double> averageLatency = vector<double>(NUM_RANKS*NUM_BANKS,0.0);
-	vector<double> bandwidth = vector<double>(NUM_RANKS*NUM_BANKS,0.0);
+    vector<double> avgCoreLatency(4,0.0);
+	vector<double> totalBandwidth(4, 0.0);
 
-	double totalBandwidth=0.0;
-	for (size_t i=0;i<NUM_RANKS;i++)
-	{
-		for (size_t j=0; j<NUM_BANKS; j++)
-		{
-			bandwidth[SEQUENTIAL(i,j)] = (((double)(totalReadsPerBank[SEQUENTIAL(i,j)]+totalWritesPerBank[SEQUENTIAL(i,j)]) * (double)bytesPerTransaction)/(1024.0*1024.0*1024.0)) / secondsThisEpoch;
-			averageLatency[SEQUENTIAL(i,j)] = ((float)totalEpochLatency[SEQUENTIAL(i,j)] / (float)(totalReadsPerBank[SEQUENTIAL(i,j)])) * tCK;
-			totalBandwidth+=bandwidth[SEQUENTIAL(i,j)];
-			totalReadsPerRank[i] += totalReadsPerBank[SEQUENTIAL(i,j)];
-			totalWritesPerRank[i] += totalWritesPerBank[SEQUENTIAL(i,j)];
+    vector<double> avgCoreLatencyPref(4,0.0);
+	vector<double> totalBandwidthPref(4, 0.0);
+
+	double totalAggregateBandwidth = 0.0;
+
+	if(finalStats){
+
+		for(size_t c=0;c<4;c++){
+			avgCoreLatency[c] = ((double)totalLatency[c] / (double)(totalReads[c])) * tCK;
+			avgCoreLatencyPref[c] = ((double)totalLatencyPref[c] / (double)(totalPrefReads[c])) * tCK;
+			bandwidthDemand[c] = (((double)(totalReads[c]+(double)totalWrites[c]) * (double)bytesPerTransaction)/(1024.0*1024.0*1024.0)) / totalSeconds;
+			bandwidthPref[c] = (((double)(totalPrefReads[c]) * (double)bytesPerTransaction)/(1024.0*1024.0*1024.0)) / totalSeconds;
+			totalAggregateBandwidth += bandwidthDemand[c] + bandwidthPref[c];
+		}
+
+		cout << " =======================================================" << endl;
+		cout << " ============== Printing DRAM Statistics [id:"<<parentMemorySystem->systemID<<"]==============" << endl;
+		cout <<  "   Total Return Transactions : " << totalTransactions << endl;
+		cout << " ("<<totalBytesTransferred <<" bytes) aggregate average bandwidth "<<totalAggregateBandwidth<<" GB/s" << endl;
+		
+		for(int core=0;core<4;core++){
+
+			cout << "core " << core << " Demand -- Average bandwidth: "  << bandwidthDemand[core] << " GB/s" << " Average_Latency: " << avgCoreLatency[core] << " ns" << endl;
+			cout << "core " << core << " Prefetch -- Average bandwidth: "  << bandwidthPref[core] << " GB/s" << " Average_Latency: " << avgCoreLatencyPref[core] << " ns" << endl;
 		}
 	}
-#ifdef LOG_OUTPUT
-	dramsim_log.precision(3);
-	dramsim_log.setf(ios::fixed,ios::floatfield);
-#else
-	cout.precision(3);
-	cout.setf(ios::fixed,ios::floatfield);
-#endif
 
-	PRINT( " =======================================================" );
-	PRINT( " ============== Printing Statistics [id:"<<parentMemorySystem->systemID<<"]==============" );
-	PRINTN( "   Total Return Transactions : " << totalTransactions );
-	PRINT( " ("<<totalBytesTransferred <<" bytes) aggregate average bandwidth "<<totalBandwidth<<"GB/s");
-
-	double totalAggregateBandwidth = 0.0;	
-	for (size_t r=0;r<NUM_RANKS;r++)
-	{
-
-		PRINT( "      -Rank   "<<r<<" : ");
-		PRINTN( "        -Reads  : " << totalReadsPerRank[r]);
-		PRINT( " ("<<totalReadsPerRank[r] * bytesPerTransaction<<" bytes)");
-		PRINTN( "        -Writes : " << totalWritesPerRank[r]);
-		PRINT( " ("<<totalWritesPerRank[r] * bytesPerTransaction<<" bytes)");
-		for (size_t j=0;j<NUM_BANKS;j++)
-		{
-			PRINT( "        -Bandwidth / Latency  (Bank " <<j<<"): " <<bandwidth[SEQUENTIAL(r,j)] << " GB/s\t\t" <<averageLatency[SEQUENTIAL(r,j)] << " ns");
-		}
-
-		// factor of 1000 at the end is to account for the fact that totalEnergy is accumulated in mJ since IDD values are given in mA
-		backgroundPower[r] = ((double)backgroundEnergy[r] / (double)(cyclesElapsed)) * Vdd / 1000.0;
-		burstPower[r] = ((double)burstEnergy[r] / (double)(cyclesElapsed)) * Vdd / 1000.0;
-		refreshPower[r] = ((double) refreshEnergy[r] / (double)(cyclesElapsed)) * Vdd / 1000.0;
-		actprePower[r] = ((double)actpreEnergy[r] / (double)(cyclesElapsed)) * Vdd / 1000.0;
-		averagePower[r] = ((backgroundEnergy[r] + burstEnergy[r] + refreshEnergy[r] + actpreEnergy[r]) / (double)cyclesElapsed) * Vdd / 1000.0;
-
-		if ((*parentMemorySystem->ReportPower)!=NULL)
-		{
-			(*parentMemorySystem->ReportPower)(backgroundPower[r],burstPower[r],refreshPower[r],actprePower[r]);
-		}
-
-		PRINT( " == Power Data for Rank        " << r );
-		PRINT( "   Average Power (watts)     : " << averagePower[r] );
-		PRINT( "     -Background (watts)     : " << backgroundPower[r] );
-		PRINT( "     -Act/Pre    (watts)     : " << actprePower[r] );
-		PRINT( "     -Burst      (watts)     : " << burstPower[r]);
-		PRINT( "     -Refresh    (watts)     : " << refreshPower[r] );
-
-		if (VIS_FILE_OUTPUT)
-		{
-		//	cout << "c="<<myChannel<< " r="<<r<<"writing to csv out on cycle "<< currentClockCycle<<endl;
-			// write the vis file output
-			csvOut << CSVWriter::IndexedName("Background_Power",myChannel,r) <<backgroundPower[r];
-			csvOut << CSVWriter::IndexedName("ACT_PRE_Power",myChannel,r) << actprePower[r];
-			csvOut << CSVWriter::IndexedName("Burst_Power",myChannel,r) << burstPower[r];
-			csvOut << CSVWriter::IndexedName("Refresh_Power",myChannel,r) << refreshPower[r];
-			double totalRankBandwidth=0.0;
-			for (size_t b=0; b<NUM_BANKS; b++)
-			{
-				csvOut << CSVWriter::IndexedName("Bandwidth",myChannel,r,b) << bandwidth[SEQUENTIAL(r,b)];
-				totalRankBandwidth += bandwidth[SEQUENTIAL(r,b)];
-				totalAggregateBandwidth += bandwidth[SEQUENTIAL(r,b)];
-				csvOut << CSVWriter::IndexedName("Average_Latency",myChannel,r,b) << averageLatency[SEQUENTIAL(r,b)];
-			}
-			csvOut << CSVWriter::IndexedName("Rank_Aggregate_Bandwidth",myChannel,r) << totalRankBandwidth; 
-			csvOut << CSVWriter::IndexedName("Rank_Average_Bandwidth",myChannel,r) << totalRankBandwidth/NUM_RANKS; 
-		}
-	}
-	if (VIS_FILE_OUTPUT)
-	{
-		csvOut << CSVWriter::IndexedName("Aggregate_Bandwidth",myChannel) << totalAggregateBandwidth;
-		csvOut << CSVWriter::IndexedName("Average_Bandwidth",myChannel) << totalAggregateBandwidth / (NUM_RANKS*NUM_BANKS);
-	}
-
-	// only print the latency histogram at the end of the simulation since it clogs the output too much to print every epoch
-	if (finalStats)
-	{
-		PRINT( " ---  Latency list ("<<latencies.size()<<")");
-		PRINT( "       [lat] : #");
-		if (VIS_FILE_OUTPUT)
-		{
-			csvOut.getOutputStream() << "!!HISTOGRAM_DATA"<<endl;
-		}
-
-		map<unsigned,unsigned>::iterator it; //
-		for (it=latencies.begin(); it!=latencies.end(); it++)
-		{
-			PRINT( "       ["<< it->first <<"-"<<it->first+(HISTOGRAM_BIN_SIZE-1)<<"] : "<< it->second );
-			if (VIS_FILE_OUTPUT)
-			{
-				csvOut.getOutputStream() << it->first <<"="<< it->second << endl;
-			}
-		}
-		if (currentClockCycle % EPOCH_LENGTH == 0)
-		{
-			PRINT( " --- Grand Total Bank usage list");
-			for (size_t i=0;i<NUM_RANKS;i++)
-			{
-				PRINT("Rank "<<i<<":"); 
-				for (size_t j=0;j<NUM_BANKS;j++)
-				{
-					PRINT( "  b"<<j<<": "<<grandTotalBankAccesses[SEQUENTIAL(i,j)]);
-				}
-			}
-		}
-
-	}
-
-
-	PRINT(endl<< " == Pending Transactions : "<<pendingReadTransactions.size()<<" ("<<currentClockCycle<<")==");
-	/*
-	for(size_t i=0;i<pendingReadTransactions.size();i++)
-		{
-			PRINT( i << "] I've been waiting for "<<currentClockCycle-pendingReadTransactions[i].timeAdded<<endl;
-		}
-	*/
-#ifdef LOG_OUTPUT
-	dramsim_log.flush();
-#endif
-
-	resetStats();
+	
 }
 MemoryController::~MemoryController()
 {
@@ -918,9 +816,17 @@ MemoryController::~MemoryController()
 
 }
 //inserts a latency into the latency histogram
-void MemoryController::insertHistogram(unsigned latencyValue, unsigned rank, unsigned bank)
+void MemoryController::insertHistogram(unsigned latencyValue, unsigned rank, unsigned bank, unsigned core, bool isPrefetch)
 {
-	totalEpochLatency[SEQUENTIAL(rank,bank)] += latencyValue;
+	// cout << "insertHistogram core" << core << endl;
+	if(isPrefetch){
+		// totalEpochLatencyPref[core][SEQUENTIAL(rank,bank)] += latencyValue;
+		totalLatencyPref[core] += latencyValue;
+	}
+	else{
+		// totalEpochLatency[core][SEQUENTIAL(rank,bank)] += latencyValue;
+		totalLatency[core] += latencyValue;
+	}
 	//poor man's way to bin things.
 	latencies[(latencyValue/HISTOGRAM_BIN_SIZE)*HISTOGRAM_BIN_SIZE]++;
 }
@@ -1090,6 +996,20 @@ void MemoryController::dispatchReq(uint64_t curClock){
 					newTransactionBank, transaction->data, dramsim_log);
 
 
+             // update read and writes for stats:
+                    if(transaction->transactionType  == DATA_WRITE){
+	       		totalWrites[transaction->core]++;
+                     }
+
+                    if(transaction->transactionType  == DATA_READ){
+	            	
+            	        if(transaction->isPrefetch){
+            		     totalPrefReads[transaction->core]++;
+            	        }
+                        else{
+                	    totalReads[transaction->core]++;
+                        }
+		    }
 
 			commandQueue.enqueue(ACTcommand);
 			commandQueue.enqueue(command);
