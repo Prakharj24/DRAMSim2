@@ -1,4 +1,4 @@
-CXXFLAGS=-DNO_STORAGE -Wall 
+CXXFLAGS=-DNO_STORAGE -Wall -DDEBUG_BUILD 
 OPTFLAGS=-O3 
 
 
@@ -10,9 +10,9 @@ endif
 CXXFLAGS+=$(OPTFLAGS)
 
 EXE_NAME=DRAMSim
-STATIC_LIB_NAME := libdramsim-base.a
-LIB_NAME=libdramsim-base.so
-LIB_NAME_MACOS=libdramsim-base.dylib
+STATIC_LIB_NAME := libdramsim.a
+LIB_NAME=libdramsim.so
+LIB_NAME_MACOS=libdramsim.dylib
 
 SRC = $(wildcard *.cpp)
 OBJ = $(addsuffix .o, $(basename $(SRC)))
