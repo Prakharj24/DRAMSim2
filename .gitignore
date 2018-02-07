@@ -1,4 +1,5 @@
 results/
+*.so
 *.o
 *.po
 *.dep
