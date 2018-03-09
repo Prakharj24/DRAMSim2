@@ -38,7 +38,6 @@
 #include "MemoryController.h"
 #include "MemorySystem.h"
 #include "AddressMapping.h"
-
 #define SEQUENTIAL(rank,bank) (rank*NUM_BANKS)+bank
 
 /* Power computations are localized to MemoryController.cpp */ 
@@ -101,11 +100,11 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	refreshEnergy = vector <uint64_t> (NUM_RANKS,0);
 
 
-	totalLatency  = vector<double>(4,0.0);
-	totalLatencyPref = vector<double>(4,0.0);
+	totalLatency  = vector<double>(NUM_CPU,0.0);
+	totalLatencyPref = vector<double>(NUM_CPU,0.0);
 
 
-        for(int i=0;i<4;i++){
+        for(int i=0;i<NUM_CPU;i++){
             totalReads[i] = 0;
             totalPrefReads[i] = 0;
             totalWrites[i] = 0;
@@ -841,20 +840,20 @@ void MemoryController::printStats(bool finalStats)
 	uint64_t totalBytesTransferred = totalTransactions * bytesPerTransaction;
 	double totalSeconds = (double)currentClockCycle * tCK * 1E-9;
 
-	vector <double> bandwidthDemand(4,0.0);
-	vector <double> bandwidthPref(4,0.0);
+	vector <double> bandwidthDemand(NUM_CPU,0.0);
+	vector <double> bandwidthPref(NUM_CPU,0.0);
 
-    vector<double> avgCoreLatency(4,0.0);
-	vector<double> totalBandwidth(4, 0.0);
+        vector<double> avgCoreLatency(NUM_CPU,0.0);
+	vector<double> totalBandwidth(NUM_CPU, 0.0);
 
-    vector<double> avgCoreLatencyPref(4,0.0);
-	vector<double> totalBandwidthPref(4, 0.0);
+        vector<double> avgCoreLatencyPref(NUM_CPU,0.0);
+	vector<double> totalBandwidthPref(NUM_CPU, 0.0);
 
 	double totalAggregateBandwidth = 0.0;
 
 	if(finalStats){
 
-		for(size_t c=0;c<4;c++){
+		for(size_t c=0;c<NUM_CPU;c++){
 			avgCoreLatency[c] = ((double)totalLatency[c] / (double)(totalReads[c])) * tCK;
 			avgCoreLatencyPref[c] = ((double)totalLatencyPref[c] / (double)(totalPrefReads[c])) * tCK;
 			bandwidthDemand[c] = (((double)(totalReads[c]+(double)totalWrites[c]) * (double)bytesPerTransaction)/(1024.0*1024.0*1024.0)) / totalSeconds;
@@ -867,7 +866,7 @@ void MemoryController::printStats(bool finalStats)
 		cout <<  "   Total Return Transactions : " << totalTransactions << endl;
 		cout << " ("<<totalBytesTransferred <<" bytes) aggregate average bandwidth "<<totalAggregateBandwidth<<" GB/s" << endl;
 		
-		for(int core=0;core<4;core++){
+		for(int core=0;core<NUM_CPU;core++){
 
 			cout << "core " << core << " Demand -- Average bandwidth: "  << bandwidthDemand[core] << " GB/s" << " Average_Latency: " << avgCoreLatency[core] << " ns" << endl;
 			cout << "core " << core << " Prefetch -- Average bandwidth: "  << bandwidthPref[core] << " GB/s" << " Average_Latency: " << avgCoreLatencyPref[core] << " ns" << endl;

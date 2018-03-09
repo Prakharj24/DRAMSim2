@@ -41,7 +41,6 @@ using std::string;
 
 namespace DRAMSim 
 {
-
 	class MultiChannelMemorySystem {
 		public: 
 			bool addTransaction(bool isWrite, uint64_t addr);
