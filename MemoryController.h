@@ -48,6 +48,7 @@
 #include <map>
 #include <queue>
 
+#define NUM_CPU 8 
 using namespace std;
 
 namespace DRAMSim
@@ -111,14 +112,14 @@ private:
 
         vector<double> totalLatencyPref;
         vector<double> totalLatency;
-	vector<long long int> totalReadsPerBank[4];
-	vector<long long int> totalWritesPerBank[4];
+	vector<long long int> totalReadsPerBank[NUM_CPU];
+	vector<long long int> totalWritesPerBank[NUM_CPU];
 //	vector< vector<uint64_t> > totalEpochLatency;
 //	vector< vector<uint64_t> > totalReadsPerBank;
 //	vector< vector<uint64_t> > totalWritesPerBank;
-	uint64_t totalReads[4];
-	uint64_t totalPrefReads[4];
-	uint64_t totalWrites[4];
+	uint64_t totalReads[NUM_CPU];
+	uint64_t totalPrefReads[NUM_CPU];
+	uint64_t totalWrites[NUM_CPU];
 	
 
 	unsigned channelBitWidth;
