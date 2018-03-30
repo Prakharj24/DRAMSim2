@@ -47,6 +47,7 @@
 #include "CSVWriter.h"
 #include <map>
 
+#define NUM_CPU 8 
 using namespace std;
 
 namespace DRAMSim
@@ -120,9 +121,9 @@ private:
 
         vector<double> totalLatency;
         vector<double> totalLatencyPref;
-	uint64_t totalReads[4];
-	uint64_t totalPrefReads[4];
-	uint64_t totalWrites[4];
+	uint64_t totalReads[NUM_CPU];
+	uint64_t totalPrefReads[NUM_CPU];
+	uint64_t totalWrites[NUM_CPU];
 	
 
 	unsigned channelBitWidth;

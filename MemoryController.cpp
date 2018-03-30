@@ -2,20 +2,20 @@
 *  Copyright (c) 2010-2011, Elliott Cooper-Balis
 *                             Paul Rosenfeld
 *                             Bruce Jacob
-*                             University of Maryland 
+*                             University of Maryland
 *                             dramninjas [at] gmail [dot] com
 *  All rights reserved.
-*  
+*
 *  Redistribution and use in source and binary forms, with or without
 *  modification, are permitted provided that the following conditions are met:
-*  
+*
 *     * Redistributions of source code must retain the above copyright notice,
 *        this list of conditions and the following disclaimer.
-*  
+*
 *     * Redistributions in binary form must reproduce the above copyright notice,
 *        this list of conditions and the following disclaimer in the documentation
 *        and/or other materials provided with the distribution.
-*  
+*
 *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 *  ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 *  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -40,8 +40,7 @@
 #include "AddressMapping.h"
 
 #define SEQUENTIAL(rank,bank) (rank*NUM_BANKS)+bank
-
-/* Power computations are localized to MemoryController.cpp */ 
+/* Power computations are localized to MemoryController.cpp */
 extern unsigned IDD0;
 extern unsigned IDD1;
 extern unsigned IDD2P;
@@ -56,7 +55,7 @@ extern unsigned IDD5;
 extern unsigned IDD6;
 extern unsigned IDD6L;
 extern unsigned IDD7;
-extern float Vdd; 
+extern float Vdd;
 
 using namespace DRAMSim;
 
@@ -104,11 +103,11 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	refreshEnergy = vector <uint64_t> (NUM_RANKS,0);
 
 
-	totalLatency  = vector<double>(4,0.0);
-	totalLatencyPref = vector<double>(4,0.0);
+	totalLatency  = vector<double>(NUM_CPU,0.0);
+	totalLatencyPref = vector<double>(NUM_CPU,0.0);
 
 
-        for(int i=0;i<4;i++){
+        for(int i=0;i<NUM_CPU;i++){
             totalReads[i] = 0;
             totalPrefReads[i] = 0;
             totalWrites[i] = 0;
@@ -169,7 +168,7 @@ void MemoryController::update()
 	// update BTA turn and subturn
 	if(currentClockCycle - lastEpoch >= epochLen){
 		lastEpoch = currentClockCycle;
-		if(turn == 3){
+		if(turn == NUM_CPU - 1){
 			turn = 0;
 			if(subTurn == 2)
 				subTurn = 0;
@@ -306,7 +305,7 @@ void MemoryController::update()
 
 	//function returns true if there is something valid in poppedBusPacket
 	if (commandQueue.pop(&poppedBusPacket))
-	{	
+	{
 		if (poppedBusPacket->busPacketType == WRITE || poppedBusPacket->busPacketType == WRITE_P)
 		{
 
@@ -324,7 +323,7 @@ void MemoryController::update()
 		unsigned bank = poppedBusPacket->bank;
 		switch (poppedBusPacket->busPacketType)
 		{
-			
+
 			case READ_P:
 			case READ:
 				//add energy to account for total
@@ -333,7 +332,7 @@ void MemoryController::update()
 					PRINT(" ++ Adding Read energy to total energy");
 				}
 				burstEnergy[rank] += (IDD4R - IDD3N) * BL/2 * NUM_DEVICES;
-				if (poppedBusPacket->busPacketType == READ_P) 
+				if (poppedBusPacket->busPacketType == READ_P)
 				{
 					//Don't bother setting next read or write times because the bank is no longer active
 					//bankStates[rank][bank].currentBankState = Idle;
@@ -385,7 +384,7 @@ void MemoryController::update()
 				break;
 			case WRITE_P:
 			case WRITE:
-				if (poppedBusPacket->busPacketType == WRITE_P) 
+				if (poppedBusPacket->busPacketType == WRITE_P)
 				{
 					bankStates[rank][bank].nextActivate = max(currentClockCycle + WRITE_AUTOPRE_DELAY,
 							bankStates[rank][bank].nextActivate);
@@ -547,10 +546,10 @@ void MemoryController::update()
 				// PRINT( "req dispatched@: " << currentClockCycle << " diff: " << currentClockCycle - prevReq);
 				// prevReq = currentClockCycle;
 						// cout << "act: " << bankStates[newTransactionRank][newTransactionBank].nextActivate << endl;
-				if (DEBUG_ADDR_MAP) 
+				if (DEBUG_ADDR_MAP)
 				{
 					PRINTN("== New Transaction - Mapping Address [0x" << hex << transaction->address << dec << "]");
-					if (transaction->transactionType == DATA_READ) 
+					if (transaction->transactionType == DATA_READ)
 					{
 						PRINT(" (Read)");
 					}
@@ -576,7 +575,7 @@ void MemoryController::update()
                                 }
 
                                 if(transaction->transactionType  == DATA_READ){
-	            	
+
                                   	if(transaction->isPrefetch){
             		                    totalPrefReads[transaction->core]++;
             	                        }
@@ -613,7 +612,7 @@ void MemoryController::update()
 				else
 				{
 					// just delete the transaction now that it's a buspacket
-					delete transaction; 
+					delete transaction;
 				}
 				/* only allow one transaction to be scheduled per cycle -- this should
 				 * be a reasonable assumption considering how much logic would be
@@ -747,14 +746,14 @@ void MemoryController::update()
 
 				delete pendingReadTransactions[i];
 				pendingReadTransactions.erase(pendingReadTransactions.begin()+i);
-				foundMatch=true; 
+				foundMatch=true;
 				break;
 			}
 		}
 		if (!foundMatch)
 		{
 			ERROR("Can't find a matching transaction for 0x"<<hex<<returnTransaction[0]->address<<dec);
-			abort(); 
+			abort();
 		}
 		delete returnTransaction[0];
 		returnTransaction.erase(returnTransaction.begin());
@@ -834,7 +833,7 @@ bool MemoryController::addTransaction(Transaction *trans)
 		transactionQueue.push_back(trans);
 		return true;
 	}
-	else 
+	else
 	{
 		return false;
 	}
@@ -843,7 +842,7 @@ bool MemoryController::addTransaction(Transaction *trans)
 void MemoryController::resetStats()
 {
 
-	// for(size_t c=0;c<4;c++){	
+	// for(size_t c=0;c<4;c++){
 	// 	for (size_t i=0; i<NUM_RANKS; i++)
 	// 	{
 	// 		for (size_t j=0; j<NUM_BANKS; j++)
@@ -874,20 +873,20 @@ void MemoryController::printStats(bool finalStats)
 	uint64_t totalBytesTransferred = totalTransactions * bytesPerTransaction;
 	double totalSeconds = (double)currentClockCycle * tCK * 1E-9;
 
-	vector <double> bandwidthDemand(4,0.0);
-	vector <double> bandwidthPref(4,0.0);
+	vector <double> bandwidthDemand(NUM_CPU,0.0);
+	vector <double> bandwidthPref(NUM_CPU,0.0);
 
-    vector<double> avgCoreLatency(4,0.0);
-	vector<double> totalBandwidth(4, 0.0);
+    vector<double> avgCoreLatency(NUM_CPU,0.0);
+	vector<double> totalBandwidth(NUM_CPU, 0.0);
 
-    vector<double> avgCoreLatencyPref(4,0.0);
-	vector<double> totalBandwidthPref(4, 0.0);
+    vector<double> avgCoreLatencyPref(NUM_CPU,0.0);
+	vector<double> totalBandwidthPref(NUM_CPU, 0.0);
 
 	double totalAggregateBandwidth = 0.0;
 
 	if(finalStats){
 
-		for(size_t c=0;c<4;c++){
+		for(size_t c=0;c<NUM_CPU;c++){
 			avgCoreLatency[c] = ((double)totalLatency[c] / (double)(totalReads[c])) * tCK;
 			avgCoreLatencyPref[c] = ((double)totalLatencyPref[c] / (double)(totalPrefReads[c])) * tCK;
 			bandwidthDemand[c] = (((double)(totalReads[c]+(double)totalWrites[c]) * (double)bytesPerTransaction)/(1024.0*1024.0*1024.0)) / totalSeconds;
@@ -899,15 +898,15 @@ void MemoryController::printStats(bool finalStats)
 		cout << " ============== Printing DRAM Statistics [id:"<<parentMemorySystem->systemID<<"]==============" << endl;
 		cout <<  "   Total Return Transactions : " << totalTransactions << endl;
 		cout << " ("<<totalBytesTransferred <<" bytes) aggregate average bandwidth "<<totalAggregateBandwidth<<" GB/s" << endl;
-		
-		for(int core=0;core<4;core++){
+
+		for(int core=0;core<NUM_CPU;core++){
 
 			cout << "core " << core << " Demand -- Average bandwidth: "  << bandwidthDemand[core] << " GB/s" << " Average_Latency: " << avgCoreLatency[core] << " ns" << endl;
 			cout << "core " << core << " Prefetch -- Average bandwidth: "  << bandwidthPref[core] << " GB/s" << " Average_Latency: " << avgCoreLatencyPref[core] << " ns" << endl;
 		}
 	}
 
-	
+
 }
 MemoryController::~MemoryController()
 {
@@ -939,51 +938,56 @@ void MemoryController::insertHistogram(unsigned latencyValue, unsigned rank, uns
 	latencies[(latencyValue/HISTOGRAM_BIN_SIZE)*HISTOGRAM_BIN_SIZE]++;
 }
 
+//bool
+//MemoryController::isValid(uint32_t core, uint32_t bank){
+
+    //if(core == 0) {
+        //if(subTurn == 0 &&( bank == 0 || bank == 3 || bank == 6)) // grp A
+            //return true;
+        //else if(subTurn == 2 &&( bank == 2 || bank == 5)) // grp C
+            //return true;
+        //else if(subTurn == 1 &&( bank == 1 || bank == 4 || bank == 7)) // grp B
+            //return true;
+        //else
+        //return false;
+    //}
+    //else if(core == 1 ){
+        //if(subTurn == 0 &&( bank == 1 || bank == 4 || bank == 7)) // grp B
+            //return true;
+        //else if(subTurn == 2 &&( bank == 0 || bank == 3 || bank == 6)) // grp A
+            //return true;
+        //else if(subTurn == 1 &&( bank == 2 || bank == 5)) //grp C
+            //return true;
+        //else
+        //return false;
+    //} //else if(core == 2 ){ //if(subTurn == 2 &&( bank == 1 || bank == 4 || bank == 7)) // grp B
+            //return true;
+        //else if(subTurn == 1 &&( bank == 0 || bank == 3 || bank == 6)) // grp A
+            //return true;
+        //else if(subTurn == 0 &&( bank == 2 || bank == 5)) //grp C
+            //return true;
+        //else
+        //return false;
+    //}
+        //else if(core == 3 ){
+        //if(subTurn == 1 &&( bank == 1 || bank == 4 || bank == 7)) // grp B
+            //return true;
+        //else if(subTurn == 0 &&( bank == 0 || bank == 3 || bank == 6)) // grp A
+            //return true;
+        //else if(subTurn == 2 &&( bank == 2 || bank == 5)) //grp C
+            //return true;
+        //else
+        //return false;
+    //}
+    //else
+        //return false;
+//}
+
+
 bool
 MemoryController::isValid(uint32_t core, uint32_t bank){
-
-    if(core == 0) {
-        if(subTurn == 0 &&( bank == 0 || bank == 3 || bank == 6)) // grp A
-            return true;
-        else if(subTurn == 2 &&( bank == 2 || bank == 5)) // grp C
-            return true;
-        else if(subTurn == 1 &&( bank == 1 || bank == 4 || bank == 7)) // grp B
-            return true;
-        else
-        return false;
+    if ((bank % 3) == ((subTurn*NUM_CPU + core) % 3)){
+        return true;
     }
-    else if(core == 1 ){
-        if(subTurn == 0 &&( bank == 1 || bank == 4 || bank == 7)) // grp B
-            return true;
-        else if(subTurn == 2 &&( bank == 0 || bank == 3 || bank == 6)) // grp A
-            return true;
-        else if(subTurn == 1 &&( bank == 2 || bank == 5)) //grp C
-            return true;
-        else
-        return false;
-    }
-        else if(core == 2 ){
-        if(subTurn == 2 &&( bank == 1 || bank == 4 || bank == 7)) // grp B
-            return true;
-        else if(subTurn == 1 &&( bank == 0 || bank == 3 || bank == 6)) // grp A
-            return true;
-        else if(subTurn == 0 &&( bank == 2 || bank == 5)) //grp C
-            return true;
-        else
-        return false;
-    }
-        else if(core == 3 ){
-        if(subTurn == 1 &&( bank == 1 || bank == 4 || bank == 7)) // grp B
-            return true;
-        else if(subTurn == 0 &&( bank == 0 || bank == 3 || bank == 6)) // grp A
-            return true;
-        else if(subTurn == 2 &&( bank == 2 || bank == 5)) //grp C
-            return true;
-        else
-        return false;
-    }
-    else
-        return false;
+    else return false;
 }
-
-
