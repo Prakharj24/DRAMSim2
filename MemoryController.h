@@ -133,7 +133,7 @@ private:
 	unsigned refreshRank;
 
 	// SecMC-NI related attributes
-	vector< vector<Transaction *> > rankQ[4];
+	vector< vector<Transaction *> > rankQ[NUM_CPU];
 	uint64_t prevSch[3][4], sch[3][4];
  	uint64_t dispatchTick, epochStart;
 	uint64_t rankIndx, bankIndx, turn;

@@ -122,7 +122,7 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	dispatchTick = 0;
 	rankIndx = 0;
 	bankIndx = 1;
-	for(int i=0; i<4;i++){
+	for(int i=0; i<NUM_CPU;i++){
 		rankQ[i].reserve(NUM_RANKS);
 		for(size_t j=0;j<NUM_RANKS;j++){
 			rankQ[i][j].reserve(TRANS_QUEUE_DEPTH);
@@ -851,7 +851,7 @@ void MemoryController::constructSchedule(uint64_t curClock)
 			sch[i][j] = max(NUM_RANKS, NUM_BANKS) + 1;
 
 	// change turn
-	if(turn == 3)
+	if(turn == (NUM_CPU - 1))
 		turn = 0;
 	else
 		turn++;	
@@ -866,7 +866,7 @@ void MemoryController::constructSchedule(uint64_t curClock)
 		if(transaction->core == turn){
 			unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
 			addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
-			
+			//cout << "bp1" << endl;	
 			// push this transaction in Rank queue and remove from transaction queue
 			rankQ[turn][newTransactionRank].push_back(transaction);
 			// cout << "adding rank: " << newTransactionRank << " address: " << transaction->address << endl;	
@@ -900,6 +900,7 @@ void MemoryController::constructSchedule(uint64_t curClock)
 	}
 	// cout << endl;
 
+			//cout << "bp2" << endl;	
   	priority_queue<pair<double, int>> q;
 	for (int i = 0; i < NUM_RANKS; ++i) {
 		q.push(pair<double, int>(pktsInRank[i], i));
@@ -914,6 +915,7 @@ void MemoryController::constructSchedule(uint64_t curClock)
 	}
 	// cout << endl;
 	
+			//cout << "bp3" << endl;	
 	// Rank re-ordering
 	
 	for(int i=0;i<3;i++){
@@ -926,6 +928,7 @@ void MemoryController::constructSchedule(uint64_t curClock)
 		}
 	}
 
+			//cout << "bp4" << endl;	
 	// cout << "remaining size: " << topThree.size() << endl;
 	for(int i=0;i<topThree.size();i++){
 		for(int j=0;j<3;j++){
@@ -936,6 +939,7 @@ void MemoryController::constructSchedule(uint64_t curClock)
 		}
 	}
 
+			//cout << "bp5" << endl;	
 
 
 	// cout << endl;
@@ -973,6 +977,7 @@ void MemoryController::dispatchReq(uint64_t curClock){
 		unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
 		addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
 
+			//cout << "bp6" << endl;	
 		// cout << "rank " << sch[rankIndx][0] << "has packet" << endl;
 		// bank reordering
 
@@ -995,6 +1000,7 @@ void MemoryController::dispatchReq(uint64_t curClock){
 					newTransactionColumn, newTransactionRow, newTransactionRank,
 					newTransactionBank, transaction->data, dramsim_log);
 
+			//cout << "bp6" << endl;	
 
              // update read and writes for stats:
                     if(transaction->transactionType  == DATA_WRITE){
