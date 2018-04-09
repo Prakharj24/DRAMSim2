@@ -38,7 +38,7 @@
 #include "MemoryController.h"
 #include "MemorySystem.h"
 #include "AddressMapping.h"
-
+#include <assert.h>
 #define SEQUENTIAL(rank,bank) (rank*NUM_BANKS)+bank
 #define RB_MAX (max(NUM_RANKS, NUM_BANKS) + 1)
 
@@ -863,10 +863,9 @@ void MemoryController::constructSchedule(uint64_t curClock)
 	for(ii = transactionQueue.begin(); ii != transactionQueue.end();)
 	{
 		Transaction *transaction = *ii;
-		if(transaction->core == turn){
+		if(transaction->core == turn && !transaction->isPrefetch){ // only add non prefetch requests corresponding to current core
 			unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
 			addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
-			//cout << "bp1" << endl;	
 			// push this transaction in Rank queue and remove from transaction queue
 			rankQ[turn][newTransactionRank].push_back(transaction);
 			// cout << "adding rank: " << newTransactionRank << " address: " << transaction->address << endl;	
@@ -972,20 +971,19 @@ void MemoryController::dispatchReq(uint64_t curClock){
 	// 	cout << "---------------------" << endl;
 	// }
 		
+        bool emptySlot = true;
 	for(int i=0;i<rankQ[turn][sch[rankIndx][0]].size();i++){
 		Transaction *transaction = rankQ[turn][sch[rankIndx][0]][i];
 		unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
 		addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
 
-			//cout << "bp6" << endl;	
-		// cout << "rank " << sch[rankIndx][0] << "has packet" << endl;
 		// bank reordering
 
 		// dispatch if no bank timing violation
 		if(noBankViolation(newTransactionBank) && commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank)){
-			// cout << "noBankViolation" << endl;
+                        emptySlot = false;
+                        assert(!transaction->isPrefetch);
 			sch[rankIndx][bankIndx] = newTransactionBank;
-			// cout << "packet address: " << transaction->address << endl;
 			//now that we know there is room in the command queue, we can remove from the transaction queue
 			rankQ[turn][sch[rankIndx][0]].erase(rankQ[turn][sch[rankIndx][0]].begin() + i);
 		
@@ -1000,7 +998,6 @@ void MemoryController::dispatchReq(uint64_t curClock){
 					newTransactionColumn, newTransactionRow, newTransactionRank,
 					newTransactionBank, transaction->data, dramsim_log);
 
-			//cout << "bp6" << endl;	
 
              // update read and writes for stats:
                     if(transaction->transactionType  == DATA_WRITE){
@@ -1008,18 +1005,11 @@ void MemoryController::dispatchReq(uint64_t curClock){
                      }
 
                     if(transaction->transactionType  == DATA_READ){
-	            	
-            	        if(transaction->isPrefetch){
-            		     totalPrefReads[transaction->core]++;
-            	        }
-                        else{
                 	    totalReads[transaction->core]++;
-                        }
 		    }
 
 			commandQueue.enqueue(ACTcommand);
 			commandQueue.enqueue(command);
-			// cout << "command enqueued" << endl;
 			// If we have a read, save the transaction so when the data comes back
 			// in a bus packet, we can staple it back into a transaction and return it
 			if (transaction->transactionType == DATA_READ)
@@ -1036,13 +1026,66 @@ void MemoryController::dispatchReq(uint64_t curClock){
 		else
 		{
 				//  go to next iteration
-				// cout << "next iteration" << endl;
 		}
 	}
 
+        // add prefetch request if it is an empty slot
+        if(emptySlot){
+            
+            //cout << "empty slot" << endl;
+            for (size_t i=0;i<transactionQueue.size();i++)
+            {
+		Transaction *transaction = transactionQueue[i];
+		unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
+
+		addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
+        
+		if (commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank) && transaction->isPrefetch)
+		{
+                    //cout << "prefetch req" << endl;
+                    totalPrefReads[transaction->core]++;
+                    transactionQueue.erase(transactionQueue.begin()+i);
+
+                    //create activate command to the row we just translated
+                    BusPacket *ACTcommand = new BusPacket(ACTIVATE, transaction->address,
+                                    newTransactionColumn, newTransactionRow, newTransactionRank,
+                                    newTransactionBank, 0, dramsim_log);
+
+                    //create read or write command and enqueue it
+                    BusPacketType bpType = transaction->getBusPacketType();
+
+                    BusPacket *command = new BusPacket(bpType, transaction->address,
+			newTransactionColumn, newTransactionRow, newTransactionRank,
+			newTransactionBank, transaction->data, dramsim_log);
+
+
+
+			commandQueue.enqueue(ACTcommand);
+			commandQueue.enqueue(command);
+
+			// If we have a read, save the transaction so when the data comes back
+			// in a bus packet, we can staple it back into a transaction and return it
+			if (transaction->transactionType == DATA_READ)
+			{
+				pendingReadTransactions.push_back(transaction);
+			}
+			else
+			{
+				// just delete the transaction now that it's a buspacket
+				delete transaction; 
+			}
+			/* only allow one transaction to be scheduled per cycle -- this should
+			 * be a reasonable assumption considering how much logic would be
+			 * required to schedule multiple entries per cycle (parallel data
+			 * lines, switching logic, decision logic)
+			 */
+			break;
+                }
+            }
+        }
 
 	//update rank and bank index in schedule
-	if(rankIndx==2){
+    if(rankIndx==2){
 		rankIndx = 0;
 		if(bankIndx==3)
 			bankIndx = 1;
