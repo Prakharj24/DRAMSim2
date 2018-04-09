@@ -519,6 +519,7 @@ void MemoryController::update()
 
 	}
 
+        bool emptySlot = true;
 	for (size_t i=0;i<transactionQueue.size();i++)
 	{
 		//pop off top transaction from queue
@@ -534,7 +535,7 @@ void MemoryController::update()
 		addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
 
 		// satisfy BTA constraints
-		if((turn == transaction->core) && isValid(transaction->core, newTransactionBank) && ((currentClockCycle - lastEpoch) >= epochLen-1))
+		if((turn == transaction->core) && isValid(transaction->core, newTransactionBank) && ((currentClockCycle - lastEpoch) >= epochLen-1) && !transaction->isPrefetch)
 		{
 
 			//if we have room, break up the transaction into the appropriate commands
@@ -542,6 +543,7 @@ void MemoryController::update()
 			if (commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank))
 			{
 
+                            emptySlot = false;
 
 				// PRINT( "req dispatched@: " << currentClockCycle << " diff: " << currentClockCycle - prevReq);
 				// prevReq = currentClockCycle;
@@ -629,6 +631,118 @@ void MemoryController::update()
 	}
 
 
+        // if we couldn't find a demand request in previous search, go for a prefetch request.
+        if(emptySlot){
+            for (size_t i=0;i<transactionQueue.size();i++)
+            {
+                    //pop off top transaction from queue
+                    //
+                    //	assuming simple scheduling at the moment
+                    //	will eventually add policies here
+                    Transaction *transaction = transactionQueue[i];
+
+                    //map address to rank,bank,row,col
+                    unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
+
+                    // pass these in as references so they get set by the addressMapping function
+                    addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
+
+                    // satisfy BTA constraints
+                    if(transaction->isPrefetch && isValid(transaction->core, newTransactionBank) && ((currentClockCycle - lastEpoch) >= epochLen-1))
+                    {
+
+                            //if we have room, break up the transaction into the appropriate commands
+                            //and add them to the command queue
+                            if (commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank))
+                            {
+
+                                emptySlot = false;
+
+                                    // PRINT( "req dispatched@: " << currentClockCycle << " diff: " << currentClockCycle - prevReq);
+                                    // prevReq = currentClockCycle;
+                                                    // cout << "act: " << bankStates[newTransactionRank][newTransactionBank].nextActivate << endl;
+                                    if (DEBUG_ADDR_MAP)
+                                    {
+                                            PRINTN("== New Transaction - Mapping Address [0x" << hex << transaction->address << dec << "]");
+                                            if (transaction->transactionType == DATA_READ)
+                                            {
+                                                    PRINT(" (Read)");
+                                            }
+                                            else
+                                            {
+                                                    PRINT(" (Write)");
+                                            }
+                                            PRINT("  Rank : " << newTransactionRank);
+                                            PRINT("  Bank : " << newTransactionBank);
+                                            PRINT("  Row  : " << newTransactionRow);
+                                            PRINT("  Col  : " << newTransactionColumn);
+                                    }
+
+
+
+                                    //now that we know there is room in the command queue, we can remove from the transaction queue
+                                    transactionQueue.erase(transactionQueue.begin()+i);
+
+
+                                     // update read and writes for stats:
+                                    if(transaction->transactionType  == DATA_WRITE){
+                                            totalWrites[transaction->core]++;
+                                    }
+
+                                    if(transaction->transactionType  == DATA_READ){
+
+                                            if(transaction->isPrefetch){
+                                                totalPrefReads[transaction->core]++;
+                                            }
+                                     else{
+                                            totalReads[transaction->core]++;
+                                        }
+                                    }
+
+
+
+
+                                    //create activate command to the row we just translated
+                                    BusPacket *ACTcommand = new BusPacket(ACTIVATE, transaction->address,
+                                                    newTransactionColumn, newTransactionRow, newTransactionRank,
+                                                    newTransactionBank, 0, dramsim_log);
+
+                                    //create read or write command and enqueue it
+                                    BusPacketType bpType = transaction->getBusPacketType();
+                                    BusPacket *command = new BusPacket(bpType, transaction->address,
+                                                    newTransactionColumn, newTransactionRow, newTransactionRank,
+                                                    newTransactionBank, transaction->data, dramsim_log);
+
+
+
+                                    commandQueue.enqueue(ACTcommand);
+                                    commandQueue.enqueue(command);
+
+                                    // If we have a read, save the transaction so when the data comes back
+                                    // in a bus packet, we can staple it back into a transaction and return it
+                                    if (transaction->transactionType == DATA_READ)
+                                    {
+                                            pendingReadTransactions.push_back(transaction);
+                                    }
+                                    else
+                                    {
+                                            // just delete the transaction now that it's a buspacket
+                                            delete transaction;
+                                    }
+                                    /* only allow one transaction to be scheduled per cycle -- this should
+                                     * be a reasonable assumption considering how much logic would be
+                                     * required to schedule multiple entries per cycle (parallel data
+                                     * lines, switching logic, decision logic)
+                                     */
+                                    break;
+                            }
+                            else // no room, do nothing this cycle
+                            {
+                                    //PRINT( "== Warning - No room in command queue" << endl;
+                            }
+                    }
+            }
+        }
 
 	//calculate power
 	//  this is done on a per-rank basis, since power characterization is done per device (not per bank)
