@@ -656,8 +656,7 @@ void MemoryController::update()
                             if (commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank))
                             {
 
-                                emptySlot = false;
-
+                               
                                     // PRINT( "req dispatched@: " << currentClockCycle << " diff: " << currentClockCycle - prevReq);
                                     // prevReq = currentClockCycle;
                                                     // cout << "act: " << bankStates[newTransactionRank][newTransactionBank].nextActivate << endl;
