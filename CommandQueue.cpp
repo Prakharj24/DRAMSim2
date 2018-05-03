@@ -197,7 +197,7 @@ bool CommandQueue::pop(BusPacket **busPacket)
 		//if the memory controller set the flags signaling that we need to issue a refresh
 		if (refreshWaiting)
 		{
-			PRINT("refreshWaiting");
+			//PRINT("refreshWaiting");
 			bool foundActiveOrTooEarly = false;
 			//look for an open bank
 			for (size_t b=0;b<NUM_BANKS;b++)
@@ -219,7 +219,7 @@ bool CommandQueue::pop(BusPacket **busPacket)
 							{
 								*busPacket = packet;
 								queue.erase(queue.begin() + j);
-								PRINT("command removed");
+								//PRINT("command removed");
 								sendingREF = true;
 							}
 							break;
@@ -253,7 +253,7 @@ bool CommandQueue::pop(BusPacket **busPacket)
 		//if we're not sending a REF, proceed as normal
 		if (!sendingREF)
 		{
-			PRINT("not sending a REF");
+			//PRINT("not sending a REF");
 			bool foundIssuable = false;
 			unsigned startingRank = nextRank;
 			unsigned startingBank = nextBank;
@@ -282,7 +282,7 @@ bool CommandQueue::pop(BusPacket **busPacket)
 								*busPacket = queue[i];
 								queue.erase(queue.begin()+i);
 								foundIssuable = true;
-								PRINT("command removed");
+								//PRINT("command removed");
 								break;
 							}
 						}
@@ -570,31 +570,31 @@ void CommandQueue::print()
 {
 	if (queuingStructure==PerRank)
 	{
-		PRINT(endl << "== Printing Per Rank Queue" );
+		//PRINT(endl << "== Printing Per Rank Queue" );
 		for (size_t i=0;i<NUM_RANKS;i++)
 		{
-			PRINT(" = Rank " << i << "  size : " << queues[i][0].size() );
+			//PRINT(" = Rank " << i << "  size : " << queues[i][0].size() );
 			for (size_t j=0;j<queues[i][0].size();j++)
 			{
-				PRINTN("    "<< j << "]");
+				//PRINTN("    "<< j << "]");
 				queues[i][0][j]->print();
 			}
 		}
 	}
 	else if (queuingStructure==PerRankPerBank)
 	{
-		PRINT("\n== Printing Per Rank, Per Bank Queue" );
+		//PRINT("\n== Printing Per Rank, Per Bank Queue" );
 
 		for (size_t i=0;i<NUM_RANKS;i++)
 		{
-			PRINT(" = Rank " << i );
+			//PRINT(" = Rank " << i );
 			for (size_t j=0;j<NUM_BANKS;j++)
 			{
-				PRINT("    Bank "<< j << "   size : " << queues[i][j].size() );
+				//PRINT("    Bank "<< j << "   size : " << queues[i][j].size() );
 
 				for (size_t k=0;k<queues[i][j].size();k++)
 				{
-					PRINTN("       " << k << "]");
+					//PRINTN("       " << k << "]");
 					queues[i][j][k]->print();
 				}
 			}

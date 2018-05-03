@@ -892,8 +892,8 @@ void MemoryController::printStats(bool finalStats)
 	vector<double> totalBandwidthPref(NUM_CPU, 0.0);
 
 	double totalAggregateBandwidth = 0.0;
-        int avgEmptySlots = 0;
-        double fracEmptySlots = 0;       
+        float  avgEmptySlots = 0.0;
+        float fracEmptySlots = 0.0;       
 	if(finalStats){
 
             avgEmptySlots = numEmptySlots/numInterval;
