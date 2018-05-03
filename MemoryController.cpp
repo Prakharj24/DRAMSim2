@@ -137,6 +137,8 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	}
 
 	turn = 0;
+        numIntervals = 0;
+        numEmptySlots = 0;
 }	
 
 //get a bus packet from either data or cmd bus
@@ -777,7 +779,12 @@ void MemoryController::printStats(bool finalStats)
 
 	double totalAggregateBandwidth = 0.0;
 
+        float avgEmptySlots = 0.0;
+        float fracEmptySlots = 0.0;
 	if(finalStats){
+
+                avgEmptySlots = 1.0*numEmptySlots/numIntervals;
+                fracEmptySlots = 1.0*avgEmptySlots/9;
 
 		for(size_t c=0;c<NUM_CPU;c++){
 			avgCoreLatency[c] = ((double)totalLatency[c] / (double)(totalReads[c])) * tCK;
@@ -791,7 +798,10 @@ void MemoryController::printStats(bool finalStats)
 		cout << " ============== Printing DRAM Statistics [id:"<<parentMemorySystem->systemID<<"]==============" << endl;
 		cout <<  "   Total Return Transactions : " << totalTransactions << endl;
 		cout << " ("<<totalBytesTransferred <<" bytes) aggregate average bandwidth "<<totalAggregateBandwidth<<" GB/s" << endl;
-		
+
+                cout << "totalEmptySlots: " << numEmptySlots << " numIntervals: " << numIntervals << endl;	
+                cout << "num avg empty slots per interval: " << avgEmptySlots << endl;
+                cout << "fraction of empty slots per interval: " << fracEmptySlots << endl;
 		for(int core=0;core<NUM_CPU;core++){
 
 			cout << "core " << core << " Demand -- Average bandwidth: "  << bandwidthDemand[core] << " GB/s" << " Average_Latency: " << avgCoreLatency[core] << " ns" << endl;
@@ -856,6 +866,7 @@ void MemoryController::constructSchedule(uint64_t curClock)
 	else
 		turn++;	
 
+        numIntervals++;
 
 	// real construction starts here
 	// move all requests currently residing on transaction queue to seperate rank queues.
@@ -972,6 +983,7 @@ void MemoryController::dispatchReq(uint64_t curClock){
 	// 	cout << "---------------------" << endl;
 	// }
 		
+        bool emptySlot = true;
 	for(int i=0;i<rankQ[turn][sch[rankIndx][0]].size();i++){
 		Transaction *transaction = rankQ[turn][sch[rankIndx][0]][i];
 		unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
@@ -983,6 +995,7 @@ void MemoryController::dispatchReq(uint64_t curClock){
 
 		// dispatch if no bank timing violation
 		if(noBankViolation(newTransactionBank) && commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank)){
+                        emptySlot = false;
 			// cout << "noBankViolation" << endl;
 			sch[rankIndx][bankIndx] = newTransactionBank;
 			// cout << "packet address: " << transaction->address << endl;
@@ -1039,6 +1052,10 @@ void MemoryController::dispatchReq(uint64_t curClock){
 				// cout << "next iteration" << endl;
 		}
 	}
+
+        if(emptySlot){
+            numEmptySlots++;
+        }
 
 
 	//update rank and bank index in schedule
