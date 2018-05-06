@@ -118,6 +118,8 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	{
 		refreshCountdown.push_back((int)((REFRESH_PERIOD/tCK)/NUM_RANKS)*(i+1));
 	}
+	numIntervals = 0;
+	numEmptySlots = 0;
 }
 
 //get a bus packet from either data or cmd bus
@@ -170,8 +172,10 @@ void MemoryController::update()
 		lastEpoch = currentClockCycle;
 		if(turn == NUM_CPU - 1){
 			turn = 0;
-			if(subTurn == 2)
+			if(subTurn == 2){
 				subTurn = 0;
+				numIntervals++;
+			}
 			else subTurn++;
 		}
 		else turn++;
@@ -632,7 +636,8 @@ void MemoryController::update()
 
 
         // if we couldn't find a demand request in previous search, go for a prefetch request.
-        if(emptySlot){
+        if(emptySlot && ((currentClockCycle - lastEpoch) >= epochLen-1)){
+	   bool stillEmptySlots = true;
             for (size_t i=0;i<transactionQueue.size();i++)
             {
                     //pop off top transaction from queue
@@ -656,7 +661,7 @@ void MemoryController::update()
                             if (commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank))
                             {
 
-                               
+                              	   stillEmptySlots = false; 
                                     // PRINT( "req dispatched@: " << currentClockCycle << " diff: " << currentClockCycle - prevReq);
                                     // prevReq = currentClockCycle;
                                                     // cout << "act: " << bankStates[newTransactionRank][newTransactionBank].nextActivate << endl;
@@ -741,7 +746,10 @@ void MemoryController::update()
                             }
                     }
             }
-        }
+	    if(stillEmptySlots){
+		numEmptySlots++;
+        	}
+	}
 
 	//calculate power
 	//  this is done on a per-rank basis, since power characterization is done per device (not per bank)
@@ -996,9 +1004,12 @@ void MemoryController::printStats(bool finalStats)
 	vector<double> totalBandwidthPref(NUM_CPU, 0.0);
 
 	double totalAggregateBandwidth = 0.0;
+	double avgEmptySlots = 0.0;
+	double fracEmptySlots = 0.0;
 
 	if(finalStats){
-
+		avgEmptySlots = 1.0*numEmptySlots/numIntervals;
+		fracEmptySlots = 1.0*avgEmptySlots/24;
 		for(size_t c=0;c<NUM_CPU;c++){
 			avgCoreLatency[c] = ((double)totalLatency[c] / (double)(totalReads[c])) * tCK;
 			avgCoreLatencyPref[c] = ((double)totalLatencyPref[c] / (double)(totalPrefReads[c])) * tCK;
@@ -1011,6 +1022,9 @@ void MemoryController::printStats(bool finalStats)
 		cout << " ============== Printing DRAM Statistics [id:"<<parentMemorySystem->systemID<<"]==============" << endl;
 		cout <<  "   Total Return Transactions : " << totalTransactions << endl;
 		cout << " ("<<totalBytesTransferred <<" bytes) aggregate average bandwidth "<<totalAggregateBandwidth<<" GB/s" << endl;
+		cout << "totalEmptySlots: " << numEmptySlots << " numIntervals: " << numIntervals << endl;
+		cout << "num avg empty slots per interval: " << avgEmptySlots << endl;
+		cout << "fraction of empty slots per interval: " << fracEmptySlots << endl;
 
 		for(int core=0;core<NUM_CPU;core++){
 

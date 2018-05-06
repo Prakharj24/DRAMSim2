@@ -124,7 +124,9 @@ private:
 	uint64_t totalReads[NUM_CPU];
 	uint64_t totalPrefReads[NUM_CPU];
 	uint64_t totalWrites[NUM_CPU];
-	
+
+	double numEmptySlots;
+	double numIntervals;	
 
 	unsigned channelBitWidth;
 	unsigned rankBitWidth;
