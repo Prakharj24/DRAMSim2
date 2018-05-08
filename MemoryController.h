@@ -48,7 +48,7 @@
 #include <map>
 #include <queue>
 
-#define NUM_CPU 8 
+#define NUM_CPU 4 
 using namespace std;
 
 namespace DRAMSim
