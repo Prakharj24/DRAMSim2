@@ -139,6 +139,8 @@ private:
 	uint64_t rankIndx, bankIndx, turn;
 	const int T_RANK = 6;
 	const int CYCLE_LENGTH = 54;
+        double numEmptySlots;
+        double numIntervals;
 	
 public:
 	// energy values are per rank -- SST uses these directly, so make these public 

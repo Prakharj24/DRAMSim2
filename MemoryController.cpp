@@ -137,6 +137,9 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	}
 
 	turn = 0;
+
+        numIntervals = 0;
+        numEmptySlots = 0;
 }	
 
 //get a bus packet from either data or cmd bus
@@ -776,8 +779,13 @@ void MemoryController::printStats(bool finalStats)
 	vector<double> totalBandwidthPref(NUM_CPU, 0.0);
 
 	double totalAggregateBandwidth = 0.0;
+        double avgEmptySlots = 0.0;
+        double fracEmptySlots = 0.0;
 
 	if(finalStats){
+
+                avgEmptySlots = 1.0*numEmptySlots/numIntervals;
+                fracEmptySlots = 1.0*avgEmptySlots/9;
 
 		for(size_t c=0;c<NUM_CPU;c++){
 			avgCoreLatency[c] = ((double)totalLatency[c] / (double)(totalReads[c])) * tCK;
@@ -791,6 +799,10 @@ void MemoryController::printStats(bool finalStats)
 		cout << " ============== Printing DRAM Statistics [id:"<<parentMemorySystem->systemID<<"]==============" << endl;
 		cout <<  "   Total Return Transactions : " << totalTransactions << endl;
 		cout << " ("<<totalBytesTransferred <<" bytes) aggregate average bandwidth "<<totalAggregateBandwidth<<" GB/s" << endl;
+                cout << "totalEmptySplots: " << numEmptySlots << " numIntervals: " << numIntervals << endl;
+                cout << "num avg empty slots per interval: " << avgEmptySlots << endl;
+                cout << "fraction of empty slots per interval: " << fracEmptySlots << endl;
+
 		
 		for(int core=0;core<NUM_CPU;core++){
 
@@ -857,6 +869,7 @@ void MemoryController::constructSchedule(uint64_t curClock)
 		turn++;	
 
 
+        numIntervals++;
 	// real construction starts here
 	// move all requests currently residing on transaction queue to seperate rank queues.
 	vector<Transaction *>::iterator	ii;
@@ -1031,6 +1044,7 @@ void MemoryController::dispatchReq(uint64_t curClock){
 
         // add prefetch request if it is an empty slot
         if(emptySlot){
+            bool stillEmptySlot = true;
             
             //cout << "empty slot" << endl;
             for (size_t i=0;i<transactionQueue.size();i++)
@@ -1042,6 +1056,7 @@ void MemoryController::dispatchReq(uint64_t curClock){
         
 		if (commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank) && transaction->isPrefetch)
 		{
+                    stillEmptySlot = false;
                     //cout << "prefetch req" << endl;
                     totalPrefReads[transaction->core]++;
                     transactionQueue.erase(transactionQueue.begin()+i);
@@ -1081,6 +1096,9 @@ void MemoryController::dispatchReq(uint64_t curClock){
 			 */
 			break;
                 }
+            }
+            if(stillEmptySlot){
+                numEmptySlots++;
             }
         }
 
