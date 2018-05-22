@@ -1,7 +1,6 @@
 /*********************************************************************************
 *  Copyright (c) 2010-2011, Elliott Cooper-Balis
-*                             Paul Rosenfeld
-*                             Bruce Jacob
+*                             Paul Rosenfeld *                             Bruce Jacob
 *                             University of Maryland
 *                             dramninjas [at] gmail [dot] com
 *  All rights reserved.
@@ -120,6 +119,9 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	}
 	numIntervals = 0;
 	numEmptySlots = 0;
+        fracEmptySlots = 0;
+        numEmptySlotsCounterOld = 0;
+        numEmptySlotsCounterCurr = 0;
 }
 
 //get a bus packet from either data or cmd bus
@@ -168,6 +170,8 @@ void MemoryController::update()
 
 	// cout << "turn: " << turn << " subTurn: " << subTurn << endl;
 	// update BTA turn and subturn
+        fracEmptySlots = 1.0*numEmptySlotsCounterOld/12;
+        //cout << "numEmptySlotsCounterOld: " << numEmptySlotsCounterOld << " numEmptySlotsCounterCurr: " << numEmptySlotsCounterCurr << endl;
 	if(currentClockCycle - lastEpoch >= epochLen){
 		lastEpoch = currentClockCycle;
 		if(turn == NUM_CPU - 1){
@@ -175,6 +179,8 @@ void MemoryController::update()
 			if(subTurn == 2){
 				subTurn = 0;
 				numIntervals++;
+                                numEmptySlotsCounterOld = numEmptySlotsCounterCurr;
+                                numEmptySlotsCounterCurr = 0;
 			}
 			else subTurn++;
 		}
@@ -748,6 +754,7 @@ void MemoryController::update()
             }
 	    if(stillEmptySlots){
 		numEmptySlots++;
+                numEmptySlotsCounterCurr++;
         	}
 	}
 
@@ -1117,4 +1124,9 @@ MemoryController::isValid(uint32_t core, uint32_t bank){
         return true;
     }
     else return false;
+}
+
+float MemoryController::getFracEmptySlots()
+{
+    return fracEmptySlots;
 }

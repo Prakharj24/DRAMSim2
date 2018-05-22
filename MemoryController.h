@@ -2,20 +2,20 @@
 *  Copyright (c) 2010-2011, Elliott Cooper-Balis
 *                             Paul Rosenfeld
 *                             Bruce Jacob
-*                             University of Maryland 
+*                             University of Maryland
 *                             dramninjas [at] gmail [dot] com
 *  All rights reserved.
-*  
+*
 *  Redistribution and use in source and binary forms, with or without
 *  modification, are permitted provided that the following conditions are met:
-*  
+*
 *     * Redistributions of source code must retain the above copyright notice,
 *        this list of conditions and the following disclaimer.
-*  
+*
 *     * Redistributions in binary form must reproduce the above copyright notice,
 *        this list of conditions and the following disclaimer in the documentation
 *        and/or other materials provided with the distribution.
-*  
+*
 *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 *  ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 *  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -69,7 +69,8 @@ public:
 	void attachRanks(vector<Rank *> *ranks);
 	void update();
 	void printStats(bool finalStats = false);
-	void resetStats(); 
+	void resetStats();
+        float getFracEmptySlots();
 
 
 	//fields
@@ -104,7 +105,7 @@ private:
 	vector<Rank *> *ranks;
 
 	//output file
-	CSVWriter &csvOut; 
+	CSVWriter &csvOut;
 
 	// these packets are counting down waiting to be transmitted on the "bus"
 	BusPacket *outgoingCmdPacket;
@@ -113,7 +114,7 @@ private:
 	unsigned dataCyclesLeft;
 
 	uint64_t totalTransactions;
-	vector<long long int> grandTotalBankAccesses; 
+	vector<long long int> grandTotalBankAccesses;
 
 	vector<uint64_t> totalReadsPerRank;
 	vector<uint64_t> totalWritesPerRank;
@@ -125,8 +126,11 @@ private:
 	uint64_t totalPrefReads[NUM_CPU];
 	uint64_t totalWrites[NUM_CPU];
 
+        double fracEmptySlots;
 	double numEmptySlots;
-	double numIntervals;	
+	double numEmptySlotsCounterOld;
+	double numEmptySlotsCounterCurr;
+	double numIntervals;
 
 	unsigned channelBitWidth;
 	unsigned rankBitWidth;
@@ -136,9 +140,9 @@ private:
 	unsigned byteOffsetWidth;
 
 	unsigned refreshRank;
-	
+
 public:
-	// energy values are per rank -- SST uses these directly, so make these public 
+	// energy values are per rank -- SST uses these directly, so make these public
 	vector< uint64_t > backgroundEnergy;
 	vector< uint64_t > burstEnergy;
 	vector< uint64_t > actpreEnergy;

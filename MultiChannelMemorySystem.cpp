@@ -543,3 +543,11 @@ MultiChannelMemorySystem *getMemorySystemInstance(const string &dev, const strin
 	return new MultiChannelMemorySystem(dev, sys, pwd, trc, megsOfMemory, visfilename);
 }
 }
+float MultiChannelMemorySystem::getFracEmptySlots()
+{
+    float slots = 0;
+    for (size_t i=0; i<NUM_CHANS; i++)
+        slots += channels[i]->getFracEmptySlots();
+    slots = slots/NUM_CHANS;
+    return slots;
+}

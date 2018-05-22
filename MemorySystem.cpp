@@ -171,6 +171,11 @@ MemorySystem::~MemorySystem()
 	}
 }
 
+float MemorySystem::getFracEmptySlots()
+{
+    memoryController->getFracEmptySlots();
+}
+
 bool MemorySystem::WillAcceptTransaction()
 {
 	return memoryController->WillAcceptTransaction();
