@@ -171,6 +171,16 @@ MemorySystem::~MemorySystem()
 	}
 }
 
+float MemorySystem::getFracEmptySlots()
+{
+    memoryController->getFracEmptySlots();
+}
+
+float MemorySystem::getMLP(int core)
+{
+    memoryController->getMLP(core);
+}
+
 bool MemorySystem::WillAcceptTransaction()
 {
 	return memoryController->WillAcceptTransaction();

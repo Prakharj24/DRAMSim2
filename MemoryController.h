@@ -62,6 +62,8 @@ public:
 	MemoryController(MemorySystem* ms, CSVWriter &csvOut_, ostream &dramsim_log_);
 	virtual ~MemoryController();
 
+        float getFracEmptySlots();
+        float getMLP(int core);
 	bool addTransaction(Transaction *trans);
 	bool WillAcceptTransaction();
 	void returnReadData(const Transaction *trans);
@@ -140,7 +142,17 @@ private:
 	const int T_RANK = 6;
 	const int CYCLE_LENGTH = 54;
         double numEmptySlots;
+        double numEmptySlotsWP;
+        double numEmptySlotsCurr;
+        double fracEmptySlotsDurr;
+        double fracEmptySlotsStart;
+        double fracEmptySlotsFinal;
         double numIntervals;
+        int reqsInQ[NUM_CPU];
+        int reqScheduled[NUM_CPU];
+        int numNonZeroIntevals[NUM_CPU];
+        double MLP_sum[NUM_CPU];
+        double MLP_curr[NUM_CPU];
 	
 public:
 	// energy values are per rank -- SST uses these directly, so make these public 

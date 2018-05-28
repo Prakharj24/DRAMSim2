@@ -537,6 +537,23 @@ int MultiChannelMemorySystem::getIniFloat(const std::string& field, float *val)
 	return IniReader::getFloat(field, val);
 }
 
+float MultiChannelMemorySystem::getFracEmptySlots()
+{
+    float slots = 0;
+    for (size_t i=0; i<NUM_CHANS; i++)
+        slots += channels[i]->getFracEmptySlots();
+    slots = slots/NUM_CHANS;
+    return slots;
+}
+float MultiChannelMemorySystem::getMLP(int core)
+{
+    float MLP = 0;
+    for (size_t i=0; i<NUM_CHANS; i++)
+        MLP += channels[i]->getMLP(core);
+    MLP = MLP/NUM_CHANS;
+    return MLP;
+}
+
 namespace DRAMSim {
 MultiChannelMemorySystem *getMemorySystemInstance(const string &dev, const string &sys, const string &pwd, const string &trc, unsigned megsOfMemory, string *visfilename) 
 {

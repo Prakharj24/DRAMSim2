@@ -51,6 +51,8 @@ namespace DRAMSim
 			void printStats(bool finalStats);
 			bool willAcceptTransaction(); 
 			bool willAcceptTransaction(uint64_t addr); 
+                        float getFracEmptySlots();
+                        float getMLP(int core);
 			std::ostream &getLogFile();
 
 			void RegisterCallbacks( 

@@ -62,6 +62,8 @@ class MultiChannelMemorySystem : public SimulatorObject
 			int getIniUint(const std::string &field, unsigned int *val);
 			int getIniUint64(const std::string &field, uint64_t *val);
 			int getIniFloat(const std::string &field, float *val);
+                        float getFracEmptySlots();
+                        float getMLP(int core);
 
 	void InitOutputFiles(string tracefilename);
 	void setCPUClockSpeed(uint64_t cpuClkFreqHz);

@@ -2,20 +2,20 @@
 *  Copyright (c) 2010-2011, Elliott Cooper-Balis
 *                             Paul Rosenfeld
 *                             Bruce Jacob
-*                             University of Maryland 
+*                             University of Maryland
 *                             dramninjas [at] gmail [dot] com
 *  All rights reserved.
-*  
+*
 *  Redistribution and use in source and binary forms, with or without
 *  modification, are permitted provided that the following conditions are met:
-*  
+*
 *     * Redistributions of source code must retain the above copyright notice,
 *        this list of conditions and the following disclaimer.
-*  
+*
 *     * Redistributions in binary form must reproduce the above copyright notice,
 *        this list of conditions and the following disclaimer in the documentation
 *        and/or other materials provided with the distribution.
-*  
+*
 *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 *  ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 *  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -42,7 +42,7 @@
 #define SEQUENTIAL(rank,bank) (rank*NUM_BANKS)+bank
 #define RB_MAX (max(NUM_RANKS, NUM_BANKS) + 1)
 
-/* Power computations are localized to MemoryController.cpp */ 
+/* Power computations are localized to MemoryController.cpp */
 extern unsigned IDD0;
 extern unsigned IDD1;
 extern unsigned IDD2P;
@@ -57,7 +57,7 @@ extern unsigned IDD5;
 extern unsigned IDD6;
 extern unsigned IDD6L;
 extern unsigned IDD7;
-extern float Vdd; 
+extern float Vdd;
 
 using namespace DRAMSim;
 
@@ -108,6 +108,11 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
             totalReads[i] = 0;
             totalPrefReads[i] = 0;
             totalWrites[i] = 0;
+            reqsInQ[i] = 0;
+            reqScheduled[i] = 0;
+            MLP_sum[i] = 0;
+            MLP_curr[i] = 0;
+            numNonZeroIntevals[i] = 0;
         }
 
 	//staggers when each rank is due for a refresh
@@ -117,7 +122,7 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	}
 
 	// SecMC-NI related initialization
-	
+
 	epochStart = 0;
 	dispatchTick = 0;
 	rankIndx = 0;
@@ -140,7 +145,12 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 
         numIntervals = 0;
         numEmptySlots = 0;
-}	
+        numEmptySlotsCurr = 0;
+        numEmptySlotsWP = 0;
+        fracEmptySlotsFinal = 0;
+        fracEmptySlotsDurr = 0;
+        fracEmptySlotsStart = 0;
+}
 
 //get a bus packet from either data or cmd bus
 void MemoryController::receiveFromBus(BusPacket *bpacket)
@@ -339,7 +349,7 @@ void MemoryController::update()
 					PRINT(" ++ Adding Read energy to total energy");
 				}
 				burstEnergy[rank] += (IDD4R - IDD3N) * BL/2 * NUM_DEVICES;
-				if (poppedBusPacket->busPacketType == READ_P) 
+				if (poppedBusPacket->busPacketType == READ_P)
 				{
 					//Don't bother setting next read or write times because the bank is no longer active
 					//bankStates[rank][bank].currentBankState = Idle;
@@ -391,7 +401,7 @@ void MemoryController::update()
 				break;
 			case WRITE_P:
 			case WRITE:
-				if (poppedBusPacket->busPacketType == WRITE_P) 
+				if (poppedBusPacket->busPacketType == WRITE_P)
 				{
 					bankStates[rank][bank].nextActivate = max(currentClockCycle + WRITE_AUTOPRE_DELAY,
 							bankStates[rank][bank].nextActivate);
@@ -642,14 +652,14 @@ void MemoryController::update()
 
 				delete pendingReadTransactions[i];
 				pendingReadTransactions.erase(pendingReadTransactions.begin()+i);
-				foundMatch=true; 
+				foundMatch=true;
 				break;
 			}
 		}
 		if (!foundMatch)
 		{
 			ERROR("Can't find a matching transaction for 0x"<<hex<<returnTransaction[0]->address<<dec);
-			abort(); 
+			abort();
 		}
 		delete returnTransaction[0];
 		returnTransaction.erase(returnTransaction.begin());
@@ -729,7 +739,7 @@ bool MemoryController::addTransaction(Transaction *trans)
 		transactionQueue.push_back(trans);
 		return true;
 	}
-	else 
+	else
 	{
 		return false;
 	}
@@ -738,7 +748,7 @@ bool MemoryController::addTransaction(Transaction *trans)
 void MemoryController::resetStats()
 {
 
-	// for(size_t c=0;c<4;c++){	
+	// for(size_t c=0;c<4;c++){
 	// 	for (size_t i=0; i<NUM_RANKS; i++)
 	// 	{
 	// 		for (size_t j=0; j<NUM_BANKS; j++)
@@ -785,7 +795,7 @@ void MemoryController::printStats(bool finalStats)
 	if(finalStats){
 
                 avgEmptySlots = 1.0*numEmptySlots/numIntervals;
-                fracEmptySlots = 1.0*avgEmptySlots/9;
+                fracEmptySlots = 1.0*avgEmptySlots/36;
 
 		for(size_t c=0;c<NUM_CPU;c++){
 			avgCoreLatency[c] = ((double)totalLatency[c] / (double)(totalReads[c])) * tCK;
@@ -803,15 +813,16 @@ void MemoryController::printStats(bool finalStats)
                 cout << "num avg empty slots per interval: " << avgEmptySlots << endl;
                 cout << "fraction of empty slots per interval: " << fracEmptySlots << endl;
 
-		
+
 		for(int core=0;core<NUM_CPU;core++){
 
+                        cout << "core " << core << " MLP " << 1.0*MLP_sum[core]/numNonZeroIntevals[core] << endl;
 			cout << "core " << core << " Demand -- Average bandwidth: "  << bandwidthDemand[core] << " GB/s" << " Average_Latency: " << avgCoreLatency[core] << " ns" << endl;
 			cout << "core " << core << " Prefetch -- Average bandwidth: "  << bandwidthPref[core] << " GB/s" << " Average_Latency: " << avgCoreLatencyPref[core] << " ns" << endl;
 		}
 	}
 
-	
+
 }
 MemoryController::~MemoryController()
 {
@@ -851,7 +862,7 @@ void MemoryController::constructSchedule(uint64_t curClock)
 		return;
 	// cout << "turn: " << turn << " epochStart " << epochStart << endl;
 	epochStart = curClock + CYCLE_LENGTH;
-	
+
 	// copy current schedule to prev schedule
 	for(int i=0;i<3;i++)
 		for(int j=0;j<4;j++)
@@ -862,14 +873,42 @@ void MemoryController::constructSchedule(uint64_t curClock)
 		for(int j=0;j<4;j++)
 			sch[i][j] = max(NUM_RANKS, NUM_BANKS) + 1;
 
+        // calculating MLP
+        if(reqsInQ[turn] <= 9) {
+            if(reqsInQ[turn])
+                MLP_curr[turn] = 1.0*reqScheduled[turn]/reqsInQ[turn];
+            MLP_sum[turn] +=  MLP_curr[turn];
+        }
+        else {
+            MLP_curr[turn] = 1.0*reqScheduled[turn]/9;
+            MLP_sum[turn] += MLP_curr[turn];
+        }
+        
+        if(reqsInQ[turn])
+            numNonZeroIntevals[turn]++;
+
+        //cout <<  "turn: " << turn  << " MLP curr: " << MLP_curr[turn] << " MLP_sum: " << MLP_sum[turn] << " numIntervals: " << numNonZeroIntevals[turn]  << " MLP_avg: " << MLP_sum[turn]/numNonZeroIntevals[turn] << " reqsInQ: "<< reqsInQ[turn] << " reqScheduled: " << reqScheduled[turn] << endl;
+
+        reqScheduled[turn] = 0;
+        reqsInQ[turn] = 0;
+        MLP_curr[turn] = 0;
+
+
 	// change turn
-	if(turn == (NUM_CPU - 1))
+	if(turn == (NUM_CPU - 1)){
 		turn = 0;
+                numIntervals++;
+                //cout << "fracEmptySlotsDurr: " << fracEmptySlotsDurr << " fracEmptySlotsStart: " << fracEmptySlotsStart << " fracEmptySlotsFinal" << fracEmptySlotsFinal << endl;
+                //cout << "numEmptySlots: " << numEmptySlots  << " numEmptySlotsCurr: " << numEmptySlotsCurr<< " numIntervals: " << numIntervals<< endl;
+                fracEmptySlotsDurr = 1.0*numEmptySlotsCurr/36; // update the counter at start of turn 0
+                fracEmptySlotsFinal = 0.5*fracEmptySlotsDurr + 0.5*fracEmptySlotsStart;
+                fracEmptySlotsStart = 1.0*numEmptySlotsWP/(numIntervals*36);
+                numEmptySlotsCurr = 0;
+        }
 	else
-		turn++;	
+		turn++;
 
 
-        numIntervals++;
 	// real construction starts here
 	// move all requests currently residing on transaction queue to seperate rank queues.
 	vector<Transaction *>::iterator	ii;
@@ -881,12 +920,12 @@ void MemoryController::constructSchedule(uint64_t curClock)
 			addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
 			// push this transaction in Rank queue and remove from transaction queue
 			rankQ[turn][newTransactionRank].push_back(transaction);
-			// cout << "adding rank: " << newTransactionRank << " address: " << transaction->address << endl;	
+			// cout << "adding rank: " << newTransactionRank << " address: " << transaction->address << endl;
 			ii = transactionQueue.erase(ii);
 		}
 		else
 			++ii;
-	}	
+	}
 
 	// cout << "turn: " << turn << endl;
 	// for(int i=0; i < NUM_RANKS;i++){
@@ -899,25 +938,26 @@ void MemoryController::constructSchedule(uint64_t curClock)
 	// 			unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
 	// 			addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
 	// 			cout << "address: " << transaction->address << " rank: " << newTransactionRank << " bank: " << newTransactionBank << endl;
-				
+
 	// 	}
 	// 	cout << "---------------------" << endl;
-	// }	
+	// }
 
 	// cout << "packets in ranks: ";
 	vector <uint64_t > pktsInRank(NUM_RANKS,0);
 	for(size_t i=0;i<NUM_RANKS;i++){
 		pktsInRank[i] = rankQ[turn][i].size();
+                reqsInQ[turn] += pktsInRank[i];
 		// cout << pktsInRank[i] << " ";
 	}
 	// cout << endl;
 
-			//cout << "bp2" << endl;	
+			//cout << "bp2" << endl;
   	priority_queue<pair<double, int>> q;
 	for (int i = 0; i < NUM_RANKS; ++i) {
 		q.push(pair<double, int>(pktsInRank[i], i));
 	}
-	
+
 	// cout << "priority queue: ";
 	vector<int> topThree;
 	for(int i=0;i<3;i++){
@@ -926,10 +966,10 @@ void MemoryController::constructSchedule(uint64_t curClock)
 		q.pop();
 	}
 	// cout << endl;
-	
-			//cout << "bp3" << endl;	
+
+			//cout << "bp3" << endl;
 	// Rank re-ordering
-	
+
 	for(int i=0;i<3;i++){
 		for(int j=0;j<topThree.size();j++){
 			if(prevSch[i][0] == topThree[j]){
@@ -940,7 +980,7 @@ void MemoryController::constructSchedule(uint64_t curClock)
 		}
 	}
 
-			//cout << "bp4" << endl;	
+			//cout << "bp4" << endl;
 	// cout << "remaining size: " << topThree.size() << endl;
 	for(int i=0;i<topThree.size();i++){
 		for(int j=0;j<3;j++){
@@ -951,14 +991,14 @@ void MemoryController::constructSchedule(uint64_t curClock)
 		}
 	}
 
-			//cout << "bp5" << endl;	
+			//cout << "bp5" << endl;
 
 
 	// cout << endl;
 	// cout << "rank order: " << prevSch[0][0] << " " << prevSch[1][0] << " " << prevSch[2][0] << endl;
 	// cout << "rank order: " << sch[0][0] << " " << sch[1][0] << " " << sch[2][0] << endl;
 
-	// 	cout << "-----------------------------------------" << endl << endl;	
+	// 	cout << "-----------------------------------------" << endl << endl;
 }
 
 void MemoryController::dispatchReq(uint64_t curClock){
@@ -979,11 +1019,11 @@ void MemoryController::dispatchReq(uint64_t curClock){
 	// 			unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
 	// 			addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
 	// 			cout << "address: " << transaction->address << " rank: " << newTransactionRank << " bank: " << newTransactionBank << endl;
-				
+
 	// 	}
 	// 	cout << "---------------------" << endl;
 	// }
-		
+
         bool emptySlot = true;
 	for(int i=0;i<rankQ[turn][sch[rankIndx][0]].size();i++){
 		Transaction *transaction = rankQ[turn][sch[rankIndx][0]][i];
@@ -995,11 +1035,14 @@ void MemoryController::dispatchReq(uint64_t curClock){
 		// dispatch if no bank timing violation
 		if(noBankViolation(newTransactionBank) && commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank)){
                         emptySlot = false;
+                        numEmptySlotsCurr++;
+                        numEmptySlotsWP++;
+                        reqScheduled[turn]++;
                         assert(!transaction->isPrefetch);
 			sch[rankIndx][bankIndx] = newTransactionBank;
 			//now that we know there is room in the command queue, we can remove from the transaction queue
 			rankQ[turn][sch[rankIndx][0]].erase(rankQ[turn][sch[rankIndx][0]].begin() + i);
-		
+
 			//create activate command to the row we just translated
 			BusPacket *ACTcommand = new BusPacket(ACTIVATE, transaction->address,
 					newTransactionColumn, newTransactionRow, newTransactionRank,
@@ -1032,10 +1075,10 @@ void MemoryController::dispatchReq(uint64_t curClock){
 			else
 			{
 				// just delete the transaction now that it's a buspacket
-				delete transaction; 
+				delete transaction;
 			}
 			break;
-		}							
+		}
 		else
 		{
 				//  go to next iteration
@@ -1045,7 +1088,7 @@ void MemoryController::dispatchReq(uint64_t curClock){
         // add prefetch request if it is an empty slot
         if(emptySlot){
             bool stillEmptySlot = true;
-            
+
             //cout << "empty slot" << endl;
             for (size_t i=0;i<transactionQueue.size();i++)
             {
@@ -1053,7 +1096,7 @@ void MemoryController::dispatchReq(uint64_t curClock){
 		unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
 
 		addressMapping(transaction->address, newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn);
-        
+
 		if (commandQueue.hasRoomFor(2, newTransactionRank, newTransactionBank) && transaction->isPrefetch)
 		{
                     stillEmptySlot = false;
@@ -1087,7 +1130,7 @@ void MemoryController::dispatchReq(uint64_t curClock){
 			else
 			{
 				// just delete the transaction now that it's a buspacket
-				delete transaction; 
+				delete transaction;
 			}
 			/* only allow one transaction to be scheduled per cycle -- this should
 			 * be a reasonable assumption considering how much logic would be
@@ -1146,4 +1189,14 @@ bool MemoryController::noBankViolation(unsigned bank){
 		}
 		return true;
 	}
+}
+
+float MemoryController::getFracEmptySlots()
+{
+    return fracEmptySlotsFinal;
+}
+
+float MemoryController::getMLP(int core)
+{
+    return (0.5*MLP_sum[core]/numNonZeroIntevals[core]) + (0.5*MLP_curr[core]);
 }
