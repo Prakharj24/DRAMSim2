@@ -110,6 +110,11 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
             totalReads[i] = 0;
             totalPrefReads[i] = 0;
             totalWrites[i] = 0;
+			MLP_sum[i] = 0;
+			MLP_curr[i] = 0;
+			numNonZeroIntervals[i] = 0;
+			reqsInQ[i] = 0;
+			reqScheduled[i] = 0;
         }
 
 	//staggers when each rank is due for a refresh
@@ -179,8 +184,30 @@ void MemoryController::update()
 			if(subTurn == 2){
 				subTurn = 0;
 				numIntervals++;
-                                numEmptySlotsCounterOld = numEmptySlotsCounterCurr;
-                                numEmptySlotsCounterCurr = 0;
+				numEmptySlotsCounterOld = numEmptySlotsCounterCurr;
+				numEmptySlotsCounterCurr = 0;
+				// calculate current and average MLP here
+				for(int i=0; i< NUM_CPU-1;i++){
+					if(reqsInQ[turn] < 3 && reqsInQ[turn]!=0)
+						MLP_curr[i] = 1.0*reqScheduled[i]/reqsInQ[turn];
+					else
+						MLP_curr[i] = 1.0*reqScheduled[i]/3;
+					MLP_sum[i] += MLP_curr[i];
+					if(reqsInQ[i])
+						numNonZeroIntervals[i]++;
+				}
+				// cout << "MLP_curr: " << MLP_curr[0] << " MLP_sum: " << 1.0*MLP_sum[0]/numNonZeroIntervals[0] << " reqsInQ: " << reqsInQ[0] << " reqsScheduled: " << reqScheduled[0] << " nonzerointervals: " << numNonZeroIntervals[0] << endl;
+
+					// reset remaining transactions as uncounted again so that they can be counted in next interval
+					for (size_t i=0;i<transactionQueue.size();i++){
+						Transaction *transaction = transactionQueue[i];
+
+							transaction->counted = false;
+					}
+					for(int i = 0; i < NUM_CPU - 1; i++){
+						reqsInQ[i] = 0;
+						reqScheduled[i] = 0;
+					}	
 			}
 			else subTurn++;
 		}
@@ -538,6 +565,10 @@ void MemoryController::update()
 		//	will eventually add policies here
 		Transaction *transaction = transactionQueue[i];
 
+		if(!transaction->counted){
+			reqsInQ[transaction->core]++;
+			transaction->counted = true;
+		}
 		//map address to rank,bank,row,col
 		unsigned newTransactionChan, newTransactionRank, newTransactionBank, newTransactionRow, newTransactionColumn;
 
@@ -554,6 +585,7 @@ void MemoryController::update()
 			{
 
                             emptySlot = false;
+			    reqScheduled[turn]++;
 
 				// PRINT( "req dispatched@: " << currentClockCycle << " diff: " << currentClockCycle - prevReq);
 				// prevReq = currentClockCycle;
@@ -1028,13 +1060,14 @@ void MemoryController::printStats(bool finalStats)
 		cout << " =======================================================" << endl;
 		cout << " ============== Printing DRAM Statistics [id:"<<parentMemorySystem->systemID<<"]==============" << endl;
 		cout <<  "   Total Return Transactions : " << totalTransactions << endl;
+		cout <<  "   Total Return Transactions : " << totalTransactions << endl;
 		cout << " ("<<totalBytesTransferred <<" bytes) aggregate average bandwidth "<<totalAggregateBandwidth<<" GB/s" << endl;
 		cout << "totalEmptySlots: " << numEmptySlots << " numIntervals: " << numIntervals << endl;
 		cout << "num avg empty slots per interval: " << avgEmptySlots << endl;
 		cout << "fraction of empty slots per interval: " << fracEmptySlots << endl;
 
 		for(int core=0;core<NUM_CPU;core++){
-
+			cout << "core " << core << " MLP " << 1.0*MLP_sum[core]/numNonZeroIntervals[core] << endl;
 			cout << "core " << core << " Demand -- Average bandwidth: "  << bandwidthDemand[core] << " GB/s" << " Average_Latency: " << avgCoreLatency[core] << " ns" << endl;
 			cout << "core " << core << " Prefetch -- Average bandwidth: "  << bandwidthPref[core] << " GB/s" << " Average_Latency: " << avgCoreLatencyPref[core] << " ns" << endl;
 		}
@@ -1129,4 +1162,11 @@ MemoryController::isValid(uint32_t core, uint32_t bank){
 float MemoryController::getFracEmptySlots()
 {
     return fracEmptySlots;
+}
+
+float MemoryController::getMLP(int core){
+	if(numNonZeroIntervals[core])
+		return (0.5*MLP_sum[core]/numNonZeroIntervals[core]) + (0.5*MLP_curr[core]);
+	else	
+		return 0;
 }

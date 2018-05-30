@@ -61,6 +61,7 @@ public:
 	uint64_t timeReturned;
     uint32_t core;
     bool isPrefetch;
+	bool counted;
 
 	friend ostream &operator<<(ostream &os, const Transaction &t);
 	//functions

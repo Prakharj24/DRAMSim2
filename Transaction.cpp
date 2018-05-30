@@ -47,7 +47,9 @@ Transaction::Transaction(TransactionType transType, uint64_t addr, void *dat) :
 	transactionType(transType),
 	address(addr),
 	data(dat) 
-{}
+{
+	counted = false;
+}
 
 
 Transaction::Transaction(TransactionType transType, uint64_t addr, void *dat, uint32_t _core) :
@@ -55,7 +57,9 @@ Transaction::Transaction(TransactionType transType, uint64_t addr, void *dat, ui
 	address(addr),
 	data(dat), 
     core(_core)
-{}
+{
+	counted = false;
+}
 
 Transaction::Transaction(TransactionType transType, uint64_t addr, void *dat, uint32_t _core, bool _isPrefetch) :
 	transactionType(transType),
@@ -63,7 +67,9 @@ Transaction::Transaction(TransactionType transType, uint64_t addr, void *dat, ui
 	data(dat), 
     core(_core),
     isPrefetch(_isPrefetch)
-{}
+{
+	counted = false;
+}
 
 Transaction::Transaction(const Transaction &t)
 	: transactionType(t.transactionType)

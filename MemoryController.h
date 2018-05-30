@@ -71,6 +71,7 @@ public:
 	void printStats(bool finalStats = false);
 	void resetStats();
         float getFracEmptySlots();
+	float getMLP(int core);
 
 
 	//fields
@@ -139,6 +140,11 @@ private:
 	unsigned colBitWidth;
 	unsigned byteOffsetWidth;
 
+double	MLP_sum[NUM_CPU];
+double	MLP_curr[NUM_CPU];
+double	numNonZeroIntervals[NUM_CPU];
+double	reqsInQ[NUM_CPU];
+double	reqScheduled[NUM_CPU];
 	unsigned refreshRank;
 
 public:

@@ -551,3 +551,13 @@ float MultiChannelMemorySystem::getFracEmptySlots()
     slots = slots/NUM_CHANS;
     return slots;
 }
+
+
+float MultiChannelMemorySystem::getMLP(int core)
+{
+    float MLP = 0;
+    for (size_t i=0; i<NUM_CHANS; i++)
+        MLP += channels[i]->getMLP(core);
+    MLP = MLP/NUM_CHANS;
+    return MLP;
+}
