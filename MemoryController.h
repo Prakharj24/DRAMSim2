@@ -150,7 +150,7 @@ private:
         double numIntervals;
         int reqsInQ[NUM_CPU];
         int reqScheduled[NUM_CPU];
-        int numNonZeroIntevals[NUM_CPU];
+        int numNonZeroIntervals[NUM_CPU];
         double MLP_sum[NUM_CPU];
         double MLP_curr[NUM_CPU];
 	

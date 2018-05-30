@@ -112,7 +112,7 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
             reqScheduled[i] = 0;
             MLP_sum[i] = 0;
             MLP_curr[i] = 0;
-            numNonZeroIntevals[i] = 0;
+            numNonZeroIntervals[i] = 0;
         }
 
 	//staggers when each rank is due for a refresh
@@ -815,8 +815,7 @@ void MemoryController::printStats(bool finalStats)
 
 
 		for(int core=0;core<NUM_CPU;core++){
-
-                        cout << "core " << core << " MLP " << 1.0*MLP_sum[core]/numNonZeroIntevals[core] << endl;
+                        cout << "core " << core << " MLP " << (1.0*MLP_sum[core]/numNonZeroIntervals[core]) << endl;
 			cout << "core " << core << " Demand -- Average bandwidth: "  << bandwidthDemand[core] << " GB/s" << " Average_Latency: " << avgCoreLatency[core] << " ns" << endl;
 			cout << "core " << core << " Prefetch -- Average bandwidth: "  << bandwidthPref[core] << " GB/s" << " Average_Latency: " << avgCoreLatencyPref[core] << " ns" << endl;
 		}
@@ -860,7 +859,6 @@ void MemoryController::constructSchedule(uint64_t curClock)
 {
 	if(curClock != epochStart)
 		return;
-	// cout << "turn: " << turn << " epochStart " << epochStart << endl;
 	epochStart = curClock + CYCLE_LENGTH;
 
 	// copy current schedule to prev schedule
@@ -877,29 +875,27 @@ void MemoryController::constructSchedule(uint64_t curClock)
         if(reqsInQ[turn] <= 9) {
             if(reqsInQ[turn])
                 MLP_curr[turn] = 1.0*reqScheduled[turn]/reqsInQ[turn];
-            MLP_sum[turn] +=  MLP_curr[turn];
+            else
+                MLP_curr[turn] = 0;
         }
         else {
             MLP_curr[turn] = 1.0*reqScheduled[turn]/9;
-            MLP_sum[turn] += MLP_curr[turn];
         }
-        
-        if(reqsInQ[turn])
-            numNonZeroIntevals[turn]++;
+        MLP_sum[turn] += MLP_curr[turn];
 
-        //cout <<  "turn: " << turn  << " MLP curr: " << MLP_curr[turn] << " MLP_sum: " << MLP_sum[turn] << " numIntervals: " << numNonZeroIntevals[turn]  << " MLP_avg: " << MLP_sum[turn]/numNonZeroIntevals[turn] << " reqsInQ: "<< reqsInQ[turn] << " reqScheduled: " << reqScheduled[turn] << endl;
+        if(reqsInQ[turn])
+            numNonZeroIntervals[turn]++;
+
+        //cout <<  "turn: " << turn  << " MLP curr: " << MLP_curr[turn] << " MLP_sum: " << MLP_sum[turn] << " numIntervals: " << numNonZeroIntervals[turn]  << " MLP_avg: " << MLP_sum[turn]/numNonZeroIntervals[turn] << " reqsInQ: "<< reqsInQ[turn] << " reqScheduled: " << reqScheduled[turn] << endl;
 
         reqScheduled[turn] = 0;
         reqsInQ[turn] = 0;
-        MLP_curr[turn] = 0;
 
 
 	// change turn
 	if(turn == (NUM_CPU - 1)){
 		turn = 0;
                 numIntervals++;
-                //cout << "fracEmptySlotsDurr: " << fracEmptySlotsDurr << " fracEmptySlotsStart: " << fracEmptySlotsStart << " fracEmptySlotsFinal" << fracEmptySlotsFinal << endl;
-                //cout << "numEmptySlots: " << numEmptySlots  << " numEmptySlotsCurr: " << numEmptySlotsCurr<< " numIntervals: " << numIntervals<< endl;
                 fracEmptySlotsDurr = 1.0*numEmptySlotsCurr/36; // update the counter at start of turn 0
                 fracEmptySlotsFinal = 0.5*fracEmptySlotsDurr + 0.5*fracEmptySlotsStart;
                 fracEmptySlotsStart = 1.0*numEmptySlotsWP/(numIntervals*36);
@@ -1198,5 +1194,5 @@ float MemoryController::getFracEmptySlots()
 
 float MemoryController::getMLP(int core)
 {
-    return (0.5*MLP_sum[core]/numNonZeroIntevals[core]) + (0.5*MLP_curr[core]);
+    return (0.5*MLP_sum[core]/numNonZeroIntervals[core]) + (0.5*MLP_curr[core]);
 }
